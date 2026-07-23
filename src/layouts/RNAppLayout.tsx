@@ -6,9 +6,11 @@ import { RNHeader } from '@/components/rn/RNHeader';
 import { RNDashboard } from '@/components/rn/RNDashboard';
 import { RNDeveloperConsole } from '@/components/rn/RNDeveloperConsole';
 import { RNLoginScreen } from '@/components/rn/RNLoginScreen';
+import { AuthUser } from '@/services/authApi';
 
 export function RNAppLayout() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [userRole, setUserRole] = useState<'Developer' | 'Administrator' | 'Encoder' | 'Viewer'>('Developer');
@@ -34,13 +36,25 @@ export function RNAppLayout() {
     }
   };
 
+  const handleLoginSuccess = (user: AuthUser) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    if (user.RoleName === 'Developer') {
+      setUserRole('Developer');
+    } else if (user.RoleName === 'Administrator') {
+      setUserRole('Administrator');
+    } else if (user.RoleName === 'Encoder') {
+      setUserRole('Encoder');
+    } else {
+      setUserRole('Viewer');
+    }
+  };
+
   // Render Login Screen if not authenticated
   if (!isAuthenticated) {
     return (
       <RNLoginScreen
-        onLoginSuccess={() => {
-          setIsAuthenticated(true);
-        }}
+        onLoginSuccess={handleLoginSuccess}
       />
     );
   }
@@ -59,7 +73,9 @@ export function RNAppLayout() {
 
         {/* Role & Auth Bar */}
         <View style={styles.roleBar}>
-          <Text style={styles.roleBarLabel}>ROLE Context:</Text>
+          <Text style={styles.roleBarLabel}>
+            USER: <Text style={{ color: '#38bdf8' }}>{currentUser?.FullName || 'Admin User'}</Text> | ROLE:
+          </Text>
           {(['Developer', 'Administrator', 'Encoder', 'Viewer'] as const).map((role) => (
             <Pressable
               key={role}

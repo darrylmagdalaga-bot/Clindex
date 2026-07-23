@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, useWindowDimensions } from 'react-native';
-import { User, Lock, Building2, Check, ArrowRight, ShieldCheck, Loader2 } from 'lucide-react';
+import { Lock, Building2, Check, ArrowRight, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
+import { UserCombobox } from '@/components/ui/UserCombobox';
+import { loginUser, AuthUser } from '@/services/authApi';
 
 interface RNLoginScreenProps {
-  onLoginSuccess?: (username: string) => void;
+  onLoginSuccess?: (user: AuthUser) => void;
 }
 
 export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) => {
@@ -14,25 +16,58 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
-  const [isUsernameFocused, setIsUsernameFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (isAuthenticating || showOverlay) return;
+    setErrorMessage('');
+
+    if (!username) {
+      setErrorMessage('Please select your account.');
+      return;
+    }
+
+    if (!password) {
+      setErrorMessage('Password is required.');
+      return;
+    }
+
     setIsAuthenticating(true);
-    
-    // Step 1: Button morphs (300ms) then Overlay fades in
-    setTimeout(() => {
-      setShowOverlay(true);
-    }, 300);
+
+    try {
+      const result = await loginUser(username, password);
+      if (result.success && result.user) {
+        setAuthUser(result.user);
+        // Step 1: Button morphs (300ms) then LoadingOverlay fades in
+        setTimeout(() => {
+          setShowOverlay(true);
+        }, 300);
+      } else {
+        setIsAuthenticating(false);
+        setErrorMessage(result.message || 'Invalid username or password.');
+      }
+    } catch (err: any) {
+      setIsAuthenticating(false);
+      setErrorMessage('Unable to connect to the server.');
+    }
   };
 
   const handleOverlayComplete = () => {
     setShowOverlay(false);
     setIsAuthenticating(false);
-    onLoginSuccess?.(username || 'Admin Staff');
+    onLoginSuccess?.(
+      authUser || {
+        UserID: 1,
+        Username: username || 'admin',
+        FullName: 'Juan Dela Cruz',
+        RoleID: 1,
+        RoleName: 'Administrator',
+      }
+    );
   };
 
   return (
@@ -83,28 +118,25 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
           <Text style={styles.welcomeHeading}>Welcome Back</Text>
           <Text style={styles.welcomeSubheading}>Sign in to continue</Text>
 
+          {/* Error Banner */}
+          {errorMessage ? (
+            <View style={styles.errorBanner}>
+              <AlertCircle size={16} color="#ef4444" style={{ marginRight: 8 }} />
+              <Text style={styles.errorBannerText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
           <View style={styles.formGroup}>
-            {/* Username Input */}
+            {/* Username Searchable Dropdown */}
             <View style={styles.inputContainer}>
-              <Text style={styles.label}>Username</Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  isUsernameFocused && styles.inputWrapperFocused,
-                ]}
-              >
-                <User size={18} color={isUsernameFocused ? '#2563eb' : '#9ca3af'} style={styles.inputIcon} />
-                <TextInput
-                  value={username}
-                  onChangeText={setUsername}
-                  placeholder="Enter your username"
-                  placeholderTextColor="#9ca3af"
-                  style={styles.textInput}
-                  onFocus={() => setIsUsernameFocused(true)}
-                  onBlur={() => setIsUsernameFocused(false)}
-                  autoCapitalize="none"
-                />
-              </View>
+              <Text style={styles.label}>Account Name</Text>
+              <UserCombobox
+                selectedUsername={username}
+                onSelectUser={(u) => {
+                  setUsername(u);
+                  setErrorMessage('');
+                }}
+              />
             </View>
 
             {/* Password Input */}
@@ -119,7 +151,10 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
                 <Lock size={18} color={isPasswordFocused ? '#2563eb' : '#9ca3af'} style={styles.inputIcon} />
                 <TextInput
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(val) => {
+                    setPassword(val);
+                    setErrorMessage('');
+                  }}
                   placeholder="Enter your password"
                   placeholderTextColor="#9ca3af"
                   secureTextEntry
@@ -309,10 +344,26 @@ const styles = StyleSheet.create({
   welcomeSubheading: {
     fontSize: 15,
     color: '#6B7280',
-    marginBottom: 32,
+    marginBottom: 24,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 20,
+  },
+  errorBannerText: {
+    fontSize: 13,
+    color: '#991B1B',
+    fontWeight: '500',
   },
   formGroup: {
-    gap: 24,
+    gap: 20,
   },
   inputContainer: {
     gap: 8,
