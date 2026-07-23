@@ -12,12 +12,12 @@ interface LoadingOverlayProps {
 
 const DEFAULT_MESSAGES = [
   'Authenticating credentials...',
-  'Loading user profile...',
-  'Verifying permissions...',
-  'Preparing legislative workspace...',
-  'Connecting to Azure SQL...',
-  'Loading dashboard...',
-  'Almost ready...',
+  'Loading profile...',
+  'Loading permissions...',
+  'Preparing dashboard...',
+  'Building workspace...',
+  'Synchronizing modules...',
+  'Finalizing interface...',
 ];
 
 export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
@@ -43,7 +43,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
           clearInterval(interval);
           setTimeout(() => {
             onComplete?.();
-          }, 300);
+          }, 400);
           return prev;
         }
       });
@@ -53,20 +53,20 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
   }, [visible, statusMessages, onComplete]);
 
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       {visible && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
+          exit={{ opacity: 0, backdropFilter: 'blur(0px)', filter: 'blur(0px)' }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           style={{
             position: 'fixed',
             inset: 0,
             zIndex: 9999,
-            backgroundColor: 'rgba(255, 255, 255, 0.94)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
+            backgroundColor: 'rgba(255, 255, 255, 0.75)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
@@ -77,10 +77,10 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
         >
           {/* Centered Content Container */}
           <motion.div
-            initial={{ scale: 0.96, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.94, opacity: 0 }}
-            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ scale: 0.98, opacity: 0, y: 10 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.96, opacity: 0, y: -10 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             style={{
               display: 'flex',
               flexDirection: 'column',
@@ -92,8 +92,8 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
           >
             {/* Logo Badge */}
             <motion.div
-              animate={{ scale: [1, 1.04, 1] }}
-              transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
+              animate={{ scale: [1, 1.03, 1] }}
+              transition={{ repeat: Infinity, duration: 2.4, ease: 'easeInOut' }}
               style={{
                 width: '64px',
                 height: '64px',
@@ -134,13 +134,13 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
               {subtitle}
             </p>
 
-            {/* Animated Progress Line Container */}
+            {/* Animated Premium Line */}
             <div
               style={{
                 width: '100%',
                 maxWidth: '280px',
-                height: '4px',
-                backgroundColor: '#E2E8F0',
+                height: '3px',
+                backgroundColor: 'rgba(226, 232, 240, 0.8)',
                 borderRadius: '2px',
                 overflow: 'hidden',
                 position: 'relative',
@@ -148,24 +148,24 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
               }}
             >
               <motion.div
-                initial={{ left: '-100%', width: '60%' }}
+                initial={{ left: '-100%', width: '50%' }}
                 animate={{ left: '100%' }}
                 transition={{
                   repeat: Infinity,
-                  duration: 1.2,
-                  ease: 'easeInOut',
+                  duration: 1.4,
+                  ease: [0.4, 0, 0.2, 1],
                 }}
                 style={{
                   position: 'absolute',
                   height: '100%',
                   backgroundColor: '#2563EB',
                   borderRadius: '2px',
-                  boxShadow: '0 0 12px rgba(37, 99, 235, 0.6)',
+                  boxShadow: '0 0 14px rgba(37, 99, 235, 0.8)',
                 }}
               />
             </div>
 
-            {/* Rotating Status Messages with Fade Effect */}
+            {/* Rotating Status Messages with Crossfade */}
             <div
               style={{
                 height: '24px',
@@ -177,10 +177,10 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
               <AnimatePresence mode="wait">
                 <motion.p
                   key={msgIndex}
-                  initial={{ opacity: 0, y: 6 }}
+                  initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.2 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
                   style={{
                     fontSize: '13px',
                     fontWeight: 500,
@@ -200,7 +200,7 @@ export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
                 alignItems: 'center',
                 gap: '6px',
                 marginTop: '36px',
-                backgroundColor: '#F1F5F9',
+                backgroundColor: 'rgba(241, 245, 249, 0.8)',
                 padding: '6px 12px',
                 borderRadius: '20px',
                 border: '1px solid #E2E8F0',

@@ -56,87 +56,110 @@ export function RNAppLayout() {
     }
   };
 
-  // Render Login Screen if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <RNLoginScreen
-        onLoginSuccess={handleLoginSuccess}
-      />
-    );
-  }
-
   return (
-    <View style={styles.container}>
-      <RNSidebar
-        activeTab={activeTab}
-        onSelectTab={setActiveTab}
-        isCollapsed={isCollapsed}
-        onToggleCollapse={() => setIsCollapsed(!isCollapsed)}
-        userRole={userRole}
-      />
-      <View style={styles.mainArea}>
-        <RNHeader
-          activeTabLabel={getTabLabel(activeTab)}
-          currentUser={currentUser}
-          onLogout={handleLogout}
+    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', backgroundColor: '#f8fafc' }}>
+      {/* Background Dashboard / Workspace (Pre-rendered or Animated Focus) */}
+      <motion.div
+        initial={false}
+        animate={
+          isAuthenticated
+            ? { opacity: 1, scale: 1, filter: 'blur(0px)' }
+            : { opacity: 0, scale: 1.03, filter: 'blur(10px)' }
+        }
+        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'row',
+          zIndex: isAuthenticated ? 10 : 1,
+          pointerEvents: isAuthenticated ? 'auto' : 'none',
+        }}
+      >
+        <RNSidebar
+          activeTab={activeTab}
+          onSelectTab={setActiveTab}
+          isCollapsed={isCollapsed}
+          onToggleCollapse={() => setIsCollapsed(!isCollapsed)}
+          userRole={userRole}
         />
+        <View style={styles.mainArea}>
+          <RNHeader
+            activeTabLabel={getTabLabel(activeTab)}
+            currentUser={currentUser}
+            onLogout={handleLogout}
+          />
 
-        {/* Role & Auth Bar */}
-        <View style={styles.roleBar}>
-          <Text style={styles.roleBarLabel}>
-            USER: <Text style={{ color: '#38bdf8' }}>{currentUser?.FullName || 'Admin User'}</Text> | ROLE:
-          </Text>
-          {(['Developer', 'Administrator', 'Encoder', 'Viewer'] as const).map((role) => (
+          {/* Role & Auth Bar */}
+          <View style={styles.roleBar}>
+            <Text style={styles.roleBarLabel}>
+              USER: <Text style={{ color: '#38bdf8' }}>{currentUser?.FullName || 'Admin User'}</Text> | ROLE:
+            </Text>
+            {(['Developer', 'Administrator', 'Encoder', 'Viewer'] as const).map((role) => (
+              <Pressable
+                key={role}
+                onPress={() => setUserRole(role)}
+                style={[styles.rolePill, userRole === role && styles.rolePillActive]}
+              >
+                <Text style={[styles.rolePillText, userRole === role && styles.rolePillTextActive]}>
+                  {role}
+                </Text>
+              </Pressable>
+            ))}
+
             <Pressable
-              key={role}
-              onPress={() => setUserRole(role)}
-              style={[styles.rolePill, userRole === role && styles.rolePillActive]}
+              onPress={handleLogout}
+              style={styles.signOutBtn}
             >
-              <Text style={[styles.rolePillText, userRole === role && styles.rolePillTextActive]}>
-                {role}
-              </Text>
+              <Text style={styles.signOutText}>← Sign Out</Text>
             </Pressable>
-          ))}
+          </View>
 
-          <Pressable
-            onPress={handleLogout}
-            style={styles.signOutBtn}
+          {/* Animated Page Container */}
+          <View style={styles.content}>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}
+              >
+                {activeTab === 'developer' ? (
+                  <RNDeveloperConsole userRole={userRole} />
+                ) : (
+                  <RNDashboard />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </View>
+        </View>
+      </motion.div>
+
+      {/* Login Screen Overlay */}
+      <AnimatePresence>
+        {!isAuthenticated && (
+          <motion.div
+            key="login-screen-layer"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 20,
+            }}
           >
-            <Text style={styles.signOutText}>← Sign Out</Text>
-          </Pressable>
-        </View>
-
-        {/* Animated Page Container */}
-        <View style={styles.content}>
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}
-            >
-              {activeTab === 'developer' ? (
-                <RNDeveloperConsole userRole={userRole} />
-              ) : (
-                <RNDashboard />
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </View>
-      </View>
-    </View>
+            <RNLoginScreen onLoginSuccess={handleLoginSuccess} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    flexDirection: 'row',
-    height: '100vh' as any,
-    backgroundColor: '#f8fafc',
-  },
   mainArea: {
     flex: 1,
     flexDirection: 'column',

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, useWindowDimensions } from 'react-native';
 import { Lock, Building2, Check, ArrowRight, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
 import { UserCombobox } from '@/components/ui/UserCombobox';
 import { loginUser, AuthUser } from '@/services/authApi';
@@ -18,12 +19,13 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
   const [rememberMe, setRememberMe] = useState(true);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isSinking, setIsSinking] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
 
   const handleSubmit = async () => {
-    if (isAuthenticating || showOverlay) return;
+    if (isAuthenticating || isSinking || showOverlay) return;
     setErrorMessage('');
 
     if (!username) {
@@ -36,22 +38,32 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
       return;
     }
 
+    // Step 0: Lock inputs, set "Authenticating...", button compress (250ms)
     setIsAuthenticating(true);
 
     try {
       const result = await loginUser(username, password);
       if (result.success && result.user) {
         setAuthUser(result.user);
-        // Step 1: Button morphs (300ms) then LoadingOverlay fades in
+        
+        // Stage One: Card sinking animation (500ms)
+        setTimeout(() => {
+          setIsSinking(true);
+        }, 250);
+
+        // Stage Three: Translucent glass overlay appears
         setTimeout(() => {
           setShowOverlay(true);
-        }, 300);
+        }, 650);
+
       } else {
         setIsAuthenticating(false);
+        setIsSinking(false);
         setErrorMessage(result.message || 'Invalid username or password.');
       }
     } catch (err: any) {
       setIsAuthenticating(false);
+      setIsSinking(false);
       setErrorMessage('Unable to connect to the server.');
     }
   };
@@ -59,6 +71,7 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
   const handleOverlayComplete = () => {
     setShowOverlay(false);
     setIsAuthenticating(false);
+    setIsSinking(false);
     onLoginSuccess?.(
       authUser || {
         UserID: 1,
@@ -71,7 +84,22 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
   };
 
   return (
-    <View style={styles.pageContainer}>
+    <motion.div
+      style={{
+        width: '100%',
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'row',
+        backgroundColor: '#F8FAFC',
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+      animate={{
+        scale: isSinking ? 1.08 : 1.00,
+        filter: isSinking ? 'blur(2px)' : 'blur(0px)',
+      }}
+      transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+    >
       {/* Fullscreen Reusable Loading Overlay */}
       <LoadingOverlay
         visible={showOverlay}
@@ -110,120 +138,143 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
 
       {/* RIGHT LOGIN FORM PANEL (~45%) */}
       <View style={styles.rightPanel}>
-        <View style={styles.loginCard}>
-          <View style={styles.cardHeaderIconBox}>
-            <Building2 size={24} color="#2563eb" />
-          </View>
-
-          <Text style={styles.welcomeHeading}>Welcome Back</Text>
-          <Text style={styles.welcomeSubheading}>Sign in to continue</Text>
-
-          {/* Error Banner */}
-          {errorMessage ? (
-            <View style={styles.errorBanner}>
-              <AlertCircle size={16} color="#ef4444" style={{ marginRight: 8 }} />
-              <Text style={styles.errorBannerText}>{errorMessage}</Text>
-            </View>
-          ) : null}
-
-          <View style={styles.formGroup}>
-            {/* Username Searchable Dropdown */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Account Name</Text>
-              <UserCombobox
-                selectedUsername={username}
-                onSelectUser={(u) => {
-                  setUsername(u);
-                  setErrorMessage('');
-                }}
-              />
+        <motion.div
+          style={{ width: '100%', maxWidth: 460 }}
+          animate={
+            isSinking
+              ? {
+                  y: 70,
+                  opacity: 0,
+                  scale: 0.94,
+                  filter: 'blur(8px)',
+                }
+              : {
+                  y: 0,
+                  opacity: 1,
+                  scale: 1,
+                  filter: 'blur(0px)',
+                }
+          }
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <View style={styles.loginCard}>
+            <View style={styles.cardHeaderIconBox}>
+              <Building2 size={24} color="#2563eb" />
             </View>
 
-            {/* Password Input */}
-            <View style={styles.inputContainer}>
-              <Text style={styles.label}>Password</Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  isPasswordFocused && styles.inputWrapperFocused,
-                ]}
-              >
-                <Lock size={18} color={isPasswordFocused ? '#2563eb' : '#9ca3af'} style={styles.inputIcon} />
-                <TextInput
-                  value={password}
-                  onChangeText={(val) => {
-                    setPassword(val);
+            <Text style={styles.welcomeHeading}>Welcome Back</Text>
+            <Text style={styles.welcomeSubheading}>Sign in to continue</Text>
+
+            {/* Error Banner */}
+            {errorMessage ? (
+              <View style={styles.errorBanner}>
+                <AlertCircle size={16} color="#ef4444" style={{ marginRight: 8 }} />
+                <Text style={styles.errorBannerText}>{errorMessage}</Text>
+              </View>
+            ) : null}
+
+            <View style={styles.formGroup}>
+              {/* Username Searchable Dropdown */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Account Name</Text>
+                <UserCombobox
+                  selectedUsername={username}
+                  onSelectUser={(u) => {
+                    if (isAuthenticating) return;
+                    setUsername(u);
                     setErrorMessage('');
                   }}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#9ca3af"
-                  secureTextEntry
-                  style={styles.textInput}
-                  onFocus={() => setIsPasswordFocused(true)}
-                  onBlur={() => setIsPasswordFocused(false)}
                 />
               </View>
+
+              {/* Password Input */}
+              <View style={styles.inputContainer}>
+                <Text style={styles.label}>Password</Text>
+                <View
+                  style={[
+                    styles.inputWrapper,
+                    isPasswordFocused && styles.inputWrapperFocused,
+                    isAuthenticating && styles.inputWrapperDisabled,
+                  ]}
+                >
+                  <Lock size={18} color={isPasswordFocused ? '#2563eb' : '#9ca3af'} style={styles.inputIcon} />
+                  <TextInput
+                    value={password}
+                    onChangeText={(val) => {
+                      if (isAuthenticating) return;
+                      setPassword(val);
+                      setErrorMessage('');
+                    }}
+                    placeholder="Enter your password"
+                    placeholderTextColor="#9ca3af"
+                    secureTextEntry
+                    editable={!isAuthenticating}
+                    style={styles.textInput}
+                    onFocus={() => setIsPasswordFocused(true)}
+                    onBlur={() => setIsPasswordFocused(false)}
+                  />
+                </View>
+              </View>
+
+              {/* Remember Me Checkbox */}
+              <Pressable
+                onPress={() => !isAuthenticating && setRememberMe(!rememberMe)}
+                style={styles.checkboxRow}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: rememberMe }}
+              >
+                <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+                  {rememberMe && <Check size={12} color="#ffffff" />}
+                </View>
+                <Text style={styles.checkboxLabel}>Remember Me</Text>
+              </Pressable>
+
+              {/* Primary Sign In Button with Morphing Animation */}
+              <motion.div
+                animate={isAuthenticating ? { scale: 0.98 } : { scale: 1 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+              >
+                <Pressable
+                  onPress={handleSubmit}
+                  disabled={isAuthenticating}
+                  style={({ pressed }) => [
+                    styles.submitButton,
+                    pressed && !isAuthenticating && styles.submitButtonPressed,
+                    isAuthenticating && styles.submitButtonLoading,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign In"
+                >
+                  {isAuthenticating ? (
+                    <>
+                      <Loader2 size={18} color="#ffffff" style={styles.spinnerIcon} />
+                      <Text style={styles.submitButtonText}>Authenticating...</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.submitButtonText}>Sign In</Text>
+                      <ArrowRight size={18} color="#ffffff" />
+                    </>
+                  )}
+                </Pressable>
+              </motion.div>
             </View>
 
-            {/* Remember Me Checkbox */}
-            <Pressable
-              onPress={() => setRememberMe(!rememberMe)}
-              style={styles.checkboxRow}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: rememberMe }}
-            >
-              <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
-                {rememberMe && <Check size={12} color="#ffffff" />}
-              </View>
-              <Text style={styles.checkboxLabel}>Remember Me</Text>
-            </Pressable>
-
-            {/* Primary Sign In Button with Morphing Animation */}
-            <Pressable
-              onPress={handleSubmit}
-              disabled={isAuthenticating}
-              style={({ pressed }) => [
-                styles.submitButton,
-                pressed && !isAuthenticating && styles.submitButtonPressed,
-                isAuthenticating && styles.submitButtonLoading,
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel="Sign In"
-            >
-              {isAuthenticating ? (
-                <>
-                  <Loader2 size={18} color="#ffffff" style={styles.spinnerIcon} />
-                  <Text style={styles.submitButtonText}>Authenticating...</Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.submitButtonText}>Sign In</Text>
-                  <ArrowRight size={18} color="#ffffff" />
-                </>
-              )}
-            </Pressable>
+            {/* Card Footer */}
+            <View style={styles.cardFooter}>
+              <Text style={styles.footerText}>Need Help?</Text>
+              <Pressable style={styles.contactLink}>
+                <Text style={styles.contactLinkText}>Contact Administrator</Text>
+              </Pressable>
+            </View>
           </View>
-
-          {/* Card Footer */}
-          <View style={styles.cardFooter}>
-            <Text style={styles.footerText}>Need Help?</Text>
-            <Pressable style={styles.contactLink}>
-              <Text style={styles.contactLinkText}>Contact Administrator</Text>
-            </Pressable>
-          </View>
-        </View>
+        </motion.div>
       </View>
-    </View>
+    </motion.div>
   );
 };
 
 const styles = StyleSheet.create({
-  pageContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    height: '100vh' as any,
-    backgroundColor: '#F8FAFC',
-  },
   leftPanel: {
     flex: 55,
     backgroundColor: '#F8FAFC',
@@ -314,7 +365,6 @@ const styles = StyleSheet.create({
   },
   loginCard: {
     width: '100%',
-    maxWidth: 460,
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 48,
@@ -389,6 +439,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
+  },
+  inputWrapperDisabled: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
   },
   inputIcon: {
     marginRight: 12,
