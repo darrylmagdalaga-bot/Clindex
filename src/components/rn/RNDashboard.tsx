@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, FlatList, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { motion } from 'motion/react';
 import { RNStatCard } from './RNStatCard';
 import { RNDocumentItem, DocumentItemData } from './RNDocumentItem';
 
@@ -55,45 +56,63 @@ export const RNDashboard: React.FC = () => {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.titleSection}>
-        <Text style={styles.title}>Dashboard</Text>
-        <Text style={styles.subtitle}>
-          July 23, 2026 • Sangguniang Panlungsod Legislative Records
-        </Text>
-      </View>
+      {/* 0ms: Header Fade */}
+      <motion.div
+        initial={{ opacity: 0, y: -6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
+      >
+        <View style={styles.titleSection}>
+          <Text style={styles.title}>Dashboard</Text>
+          <Text style={styles.subtitle}>
+            July 23, 2026 • Sangguniang Panlungsod Legislative Records
+          </Text>
+        </View>
+      </motion.div>
 
-      {/* Stats Section */}
-      <View style={styles.statsGrid}>
-        <RNStatCard
-          title="Total Documents"
-          value="112"
-          badge="+12% vs last yr"
-          accentColor="#2563eb"
-        />
-        <RNStatCard
-          title="Ordinances"
-          value="6"
-          subtitle="2026 Series"
-          accentColor="#9333ea"
-        />
-        <RNStatCard
-          title="Approved"
-          value="8"
-          subtitle="Up to date"
-          accentColor="#16a34a"
-        />
-        <RNStatCard
-          title="Pending Review"
-          value="3"
-          badge="Action needed"
-          accentColor="#d97706"
-        />
-      </View>
+      {/* 100ms: Statistics Cards Staggered Slide Up */}
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+      >
+        <View style={styles.statsGrid}>
+          <RNStatCard
+            title="Total Documents"
+            value="112"
+            badge="+12% vs last yr"
+            accentColor="#2563eb"
+          />
+          <RNStatCard
+            title="Ordinances"
+            value="6"
+            subtitle="2026 Series"
+            accentColor="#9333ea"
+          />
+          <RNStatCard
+            title="Approved"
+            value="8"
+            subtitle="Up to date"
+            accentColor="#16a34a"
+          />
+          <RNStatCard
+            title="Pending Review"
+            value="3"
+            badge="Action needed"
+            accentColor="#d97706"
+          />
+        </View>
+      </motion.div>
 
-      {/* Main Content Split */}
+      {/* 200ms - 400ms: Main Content Split Entrance */}
       <View style={styles.rowLayout}>
-        {/* Recent Documents Column */}
-        <View style={styles.mainColumn}>
+        {/* Recent Documents Column (400ms entrance) */}
+        <motion.div
+          style={{ flex: 2, minWidth: 320 }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+        >
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Legislative Activity</Text>
 
@@ -120,13 +139,25 @@ export const RNDashboard: React.FC = () => {
             </View>
           </View>
 
-          {filteredDocs.map((item) => (
-            <RNDocumentItem key={item.id} item={item} />
+          {filteredDocs.map((item, idx) => (
+            <motion.div
+              key={item.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, delay: 0.25 + idx * 0.05 }}
+            >
+              <RNDocumentItem item={item} />
+            </motion.div>
           ))}
-        </View>
+        </motion.div>
 
-        {/* Side Panel: Quick Actions & Summary */}
-        <View style={styles.sideColumn}>
+        {/* Side Panel: Quick Actions & Summary (300ms entrance) */}
+        <motion.div
+          style={{ flex: 1, minWidth: 260, gap: 16 }}
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        >
           <View style={styles.cardBox}>
             <Text style={styles.boxTitle}>Quick Actions</Text>
             <Pressable style={styles.actionRow}>
@@ -161,7 +192,7 @@ export const RNDashboard: React.FC = () => {
               <Text style={styles.alertButtonText}>Review Now →</Text>
             </Pressable>
           </View>
-        </View>
+        </motion.div>
       </View>
     </ScrollView>
   );
@@ -197,15 +228,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 20,
     flexWrap: 'wrap',
-  },
-  mainColumn: {
-    flex: 2,
-    minWidth: 320,
-  },
-  sideColumn: {
-    flex: 1,
-    minWidth: 260,
-    gap: 16,
   },
   sectionHeader: {
     flexDirection: 'row',

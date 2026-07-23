@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, useWindowDimensions } from 'react-native';
-import { User, Lock, Building2, Check, ArrowRight, ShieldCheck } from 'lucide-react';
+import { User, Lock, Building2, Check, ArrowRight, ShieldCheck, Loader2 } from 'lucide-react';
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
 
 interface RNLoginScreenProps {
   onLoginSuccess?: (username: string) => void;
@@ -15,33 +16,45 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
   const [rememberMe, setRememberMe] = useState(true);
   const [isUsernameFocused, setIsUsernameFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(false);
 
   const handleSubmit = () => {
-    setIsLoading(true);
+    if (isAuthenticating || showOverlay) return;
+    setIsAuthenticating(true);
+    
+    // Step 1: Button morphs (300ms) then Overlay fades in
     setTimeout(() => {
-      setIsLoading(false);
-      onLoginSuccess?.(username || 'Admin Staff');
-    }, 600);
+      setShowOverlay(true);
+    }, 300);
+  };
+
+  const handleOverlayComplete = () => {
+    setShowOverlay(false);
+    setIsAuthenticating(false);
+    onLoginSuccess?.(username || 'Admin Staff');
   };
 
   return (
     <View style={styles.pageContainer}>
+      {/* Fullscreen Reusable Loading Overlay */}
+      <LoadingOverlay
+        visible={showOverlay}
+        onComplete={handleOverlayComplete}
+      />
+
       {/* LEFT BRANDING PANEL (~55%) - Hidden on mobile */}
       {!isMobile && (
         <View style={styles.leftPanel}>
-          {/* Subtle Watermark Grid */}
           <View style={styles.watermarkContainer}>
             <Building2 size={360} color="#2563eb" style={{ opacity: 0.04 }} />
           </View>
 
           <View style={styles.leftContent}>
-            {/* Logo Badge */}
             <View style={styles.logoBadge}>
               <Text style={styles.logoIcon}>🏛</Text>
             </View>
 
-            {/* Typography Hierarchy */}
             <Text style={styles.brandTitle}>CLINDEX 2.0</Text>
             <Text style={styles.brandSubtitle}>Digital & Paper Legislative Records</Text>
             <Text style={styles.brandTagline}>Modern Legislative Records Management System</Text>
@@ -52,7 +65,6 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
               Securely manage legislative records in one unified platform.
             </Text>
 
-            {/* Subtle Security Badge */}
             <View style={styles.securityPill}>
               <ShieldCheck size={14} color="#2563eb" />
               <Text style={styles.securityText}>Enterprise Azure SQL Encryption Active</Text>
@@ -61,10 +73,9 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
         </View>
       )}
 
-      {/* RIGHT LOGIN FORM PANEL (~45% on desktop, 100% on mobile) */}
+      {/* RIGHT LOGIN FORM PANEL (~45%) */}
       <View style={styles.rightPanel}>
         <View style={styles.loginCard}>
-          {/* Card Header Icon */}
           <View style={styles.cardHeaderIconBox}>
             <Building2 size={24} color="#2563eb" />
           </View>
@@ -72,7 +83,6 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
           <Text style={styles.welcomeHeading}>Welcome Back</Text>
           <Text style={styles.welcomeSubheading}>Sign in to continue</Text>
 
-          {/* Form Controls */}
           <View style={styles.formGroup}>
             {/* Username Input */}
             <View style={styles.inputContainer}>
@@ -133,20 +143,29 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
               <Text style={styles.checkboxLabel}>Remember Me</Text>
             </Pressable>
 
-            {/* Primary Sign In Button */}
+            {/* Primary Sign In Button with Morphing Animation */}
             <Pressable
               onPress={handleSubmit}
+              disabled={isAuthenticating}
               style={({ pressed }) => [
                 styles.submitButton,
-                pressed && styles.submitButtonPressed,
+                pressed && !isAuthenticating && styles.submitButtonPressed,
+                isAuthenticating && styles.submitButtonLoading,
               ]}
               accessibilityRole="button"
               accessibilityLabel="Sign In"
             >
-              <Text style={styles.submitButtonText}>
-                {isLoading ? 'Signing In...' : 'Sign In'}
-              </Text>
-              {!isLoading && <ArrowRight size={18} color="#ffffff" />}
+              {isAuthenticating ? (
+                <>
+                  <Loader2 size={18} color="#ffffff" style={styles.spinnerIcon} />
+                  <Text style={styles.submitButtonText}>Authenticating...</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.submitButtonText}>Sign In</Text>
+                  <ArrowRight size={18} color="#ffffff" />
+                </>
+              )}
             </Pressable>
           </View>
 
@@ -370,6 +389,13 @@ const styles = StyleSheet.create({
   },
   submitButtonPressed: {
     backgroundColor: '#1D4ED8',
+  },
+  submitButtonLoading: {
+    backgroundColor: '#1d4ed8',
+    opacity: 0.9,
+  },
+  spinnerIcon: {
+    animationDuration: '1s',
   },
   submitButtonText: {
     fontSize: 16,

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, Text, Pressable } from 'react-native';
+import { motion, AnimatePresence } from 'motion/react';
 import { RNSidebar } from '@/components/rn/RNSidebar';
 import { RNHeader } from '@/components/rn/RNHeader';
 import { RNDashboard } from '@/components/rn/RNDashboard';
@@ -79,12 +80,24 @@ export function RNAppLayout() {
           </Pressable>
         </View>
 
+        {/* Animated Page Container */}
         <View style={styles.content}>
-          {activeTab === 'developer' ? (
-            <RNDeveloperConsole userRole={userRole} />
-          ) : (
-            <RNDashboard />
-          )}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}
+            >
+              {activeTab === 'developer' ? (
+                <RNDeveloperConsole userRole={userRole} />
+              ) : (
+                <RNDashboard />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </View>
       </View>
     </View>
@@ -150,5 +163,6 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    overflow: 'hidden',
   },
 });
