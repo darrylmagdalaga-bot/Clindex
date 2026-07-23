@@ -1,54 +1,98 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, Pressable, ScrollView } from 'react-native';
-import { User, ChevronDown, Search, Check, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { User, ChevronDown, Search, Check, Loader2, Users } from 'lucide-react';
 import { UserLoginListItem, fetchLoginUsers } from '@/services/authApi';
 
 interface UserComboboxProps {
   selectedUsername: string;
   onSelectUser: (username: string, user?: UserLoginListItem) => void;
-  isFocused?: boolean;
-  onFocus?: () => void;
-  onBlur?: () => void;
 }
 
 export const UserCombobox: React.FC<UserComboboxProps> = ({
   selectedUsername,
   onSelectUser,
-  isFocused = false,
-  onFocus,
-  onBlur,
 }) => {
   const [users, setUsers] = useState<UserLoginListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
 
-  const containerRef = useRef<View>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
+  // Load users on mount
   useEffect(() => {
-    let isMounted = true;
-    async function loadUsers() {
-      setIsLoading(true);
-      const userList = await fetchLoginUsers();
-      if (isMounted) {
-        setUsers(userList);
+    let mounted = true;
+    fetchLoginUsers().then((list) => {
+      if (mounted) {
+        setUsers(list);
         setIsLoading(false);
       }
-    }
-    loadUsers();
-    return () => {
-      isMounted = false;
-    };
+    });
+    return () => { mounted = false; };
   }, []);
 
-  const selectedUser = users.find((u) => u.Username === selectedUsername);
+  // Calculate dropdown position from trigger button
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setDropdownPos({
+      top: rect.bottom + window.scrollY + 6,
+      left: rect.left + window.scrollX,
+      width: rect.width,
+    });
+  }, []);
 
+  // Open / close
+  const handleToggle = () => {
+    if (!isOpen) {
+      updatePosition();
+      setIsOpen(true);
+      setTimeout(() => searchRef.current?.focus(), 30);
+    } else {
+      setIsOpen(false);
+      setSearchQuery('');
+    }
+  };
+
+  // Close on outside click
+  useEffect(() => {
+    if (!isOpen) return;
+    const handle = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        !triggerRef.current?.contains(target) &&
+        !dropdownRef.current?.contains(target)
+      ) {
+        setIsOpen(false);
+        setSearchQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [isOpen]);
+
+  // Reposition on scroll / resize
+  useEffect(() => {
+    if (!isOpen) return;
+    const update = () => updatePosition();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [isOpen, updatePosition]);
+
+  const selectedUser = users.find((u) => u.Username === selectedUsername);
   const filteredUsers = users.filter((u) => {
     const q = searchQuery.toLowerCase();
     return (
       u.FullName.toLowerCase().includes(q) ||
       u.Username.toLowerCase().includes(q) ||
-      (u.RoleName && u.RoleName.toLowerCase().includes(q))
+      (u.RoleName?.toLowerCase().includes(q) ?? false)
     );
   });
 
@@ -58,278 +102,174 @@ export const UserCombobox: React.FC<UserComboboxProps> = ({
     setSearchQuery('');
   };
 
+  const dropdownPortal = isOpen
+    ? createPortal(
+        <div
+          ref={dropdownRef}
+          style={{
+            position: 'absolute',
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+            width: dropdownPos.width,
+            zIndex: 99999,
+            backgroundColor: '#ffffff',
+            borderRadius: 16,
+            border: '1px solid #E2E8F0',
+            boxShadow: '0 12px 40px rgba(15, 23, 42, 0.12)',
+            padding: 8,
+            fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Search Bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '6px 12px', marginBottom: 6 }}>
+            <Search size={15} color="#64748b" style={{ flexShrink: 0 }} />
+            <input
+              ref={searchRef}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name or role..."
+              style={{
+                flex: 1,
+                border: 'none',
+                outline: 'none',
+                backgroundColor: 'transparent',
+                fontSize: 13,
+                color: '#0F172A',
+                fontFamily: 'inherit',
+              }}
+            />
+          </div>
+
+          {/* User List */}
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+            {isLoading ? (
+              // Skeleton
+              [1, 2, 3].map((i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 8px' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: '#E2E8F0', flexShrink: 0 }} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ height: 12, backgroundColor: '#E2E8F0', borderRadius: 4, width: '65%' }} />
+                    <div style={{ height: 10, backgroundColor: '#E2E8F0', borderRadius: 4, width: '40%' }} />
+                  </div>
+                </div>
+              ))
+            ) : filteredUsers.length === 0 ? (
+              <div style={{ padding: '20px 12px', textAlign: 'center' }}>
+                <Users size={28} color="#CBD5E1" style={{ margin: '0 auto 8px' }} />
+                <p style={{ fontSize: 13, color: '#64748b', margin: 0, fontWeight: 500 }}>No active users found</p>
+              </div>
+            ) : (
+              filteredUsers.map((item) => {
+                const isSelected = item.Username === selectedUsername;
+                return (
+                  <button
+                    key={item.UserID}
+                    onClick={() => handleSelect(item)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      width: '100%',
+                      padding: '9px 10px',
+                      borderRadius: 10,
+                      border: 'none',
+                      cursor: 'pointer',
+                      backgroundColor: isSelected ? '#EFF6FF' : 'transparent',
+                      textAlign: 'left',
+                      transition: 'background-color 120ms ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#F1F5F9';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSelected ? '#EFF6FF' : 'transparent';
+                    }}
+                  >
+                    {/* Avatar */}
+                    <div style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: isSelected ? '#BFDBFE' : '#DBEAFE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#2563EB' }}>
+                        {item.FullName.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+
+                    {/* Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: isSelected ? '#2563EB' : '#1E293B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {item.FullName}
+                      </p>
+                      {item.RoleName && (
+                        <p style={{ margin: 0, fontSize: 11, color: '#64748B', marginTop: 1 }}>
+                          {item.RoleName}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Checkmark */}
+                    {isSelected && <Check size={15} color="#2563eb" style={{ flexShrink: 0 }} />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
   return (
-    <View style={styles.container} ref={containerRef}>
-      {/* Combobox Trigger Button */}
-      <Pressable
-        onPress={() => {
-          setIsOpen(!isOpen);
-          if (!isOpen) onFocus?.();
-          else onBlur?.();
+    <>
+      {/* Trigger Button */}
+      <button
+        ref={triggerRef}
+        onClick={handleToggle}
+        type="button"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          width: '100%',
+          height: 52,
+          borderRadius: 14,
+          border: isOpen ? '1px solid #2563EB' : '1px solid #E5E7EB',
+          backgroundColor: '#FFFFFF',
+          paddingLeft: 16,
+          paddingRight: 16,
+          gap: 12,
+          cursor: 'pointer',
+          outline: 'none',
+          boxShadow: isOpen ? '0 0 0 3px rgba(37, 99, 235, 0.1)' : 'none',
+          transition: 'border-color 150ms, box-shadow 150ms',
+          fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
         }}
-        style={[
-          styles.triggerWrapper,
-          (isFocused || isOpen) && styles.triggerWrapperFocused,
-        ]}
       >
-        <User size={18} color={isFocused || isOpen ? '#2563eb' : '#9ca3af'} style={styles.inputIcon} />
-        
-        <View style={styles.triggerTextContainer}>
+        <User size={18} color={isOpen ? '#2563eb' : '#9ca3af'} style={{ flexShrink: 0 }} />
+
+        <span style={{ flex: 1, textAlign: 'left' }}>
           {isLoading ? (
-            <View style={styles.loadingSkeletonRow}>
-              <Loader2 size={16} color="#2563eb" style={{ marginRight: 6 }} />
-              <Text style={styles.skeletonText}>Loading user directory...</Text>
-            </View>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Loader2 size={15} color="#2563eb" />
+              <span style={{ fontSize: 14, color: '#64748b', fontStyle: 'italic' }}>Loading user directory...</span>
+            </span>
           ) : selectedUser ? (
-            <Text style={styles.selectedNameText}>{selectedUser.FullName}</Text>
+            <span style={{ fontSize: 15, fontWeight: 600, color: '#111827' }}>{selectedUser.FullName}</span>
           ) : (
-            <Text style={styles.placeholderText}>Select your account</Text>
+            <span style={{ fontSize: 15, color: '#9ca3af' }}>Select your account</span>
           )}
-        </View>
+        </span>
 
         <ChevronDown
           size={18}
           color="#9ca3af"
           style={{
-            transform: [{ rotate: isOpen ? '180deg' : '0deg' }],
+            flexShrink: 0,
+            transition: 'transform 200ms ease',
+            transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
           }}
         />
-      </Pressable>
+      </button>
 
-      {/* Popover Dropdown Menu */}
-      {isOpen && (
-        <View style={styles.dropdownPopover}>
-          {/* Search Bar inside Popover */}
-          <View style={styles.searchBarContainer}>
-            <Search size={16} color="#64748b" style={styles.searchIcon} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search by name or role..."
-              placeholderTextColor="#9ca3af"
-              style={styles.searchInput}
-              autoFocus
-            />
-          </View>
-
-          {/* User List / Skeleton / Empty State */}
-          <ScrollView style={styles.userListScroll} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-            {isLoading ? (
-              <View style={styles.skeletonContainer}>
-                {[1, 2, 3].map((i) => (
-                  <View key={i} style={styles.skeletonItem}>
-                    <View style={styles.skeletonAvatar} />
-                    <View style={styles.skeletonLines}>
-                      <View style={[styles.skeletonLine, { width: '70%' }]} />
-                      <View style={[styles.skeletonLine, { width: '40%', height: 10 }]} />
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : filteredUsers.length === 0 ? (
-              <View style={styles.emptyStateContainer}>
-                <Text style={styles.emptyStateText}>No active users found</Text>
-              </View>
-            ) : (
-              filteredUsers.map((item) => {
-                const isSelected = item.Username === selectedUsername;
-                return (
-                  <Pressable
-                    key={item.UserID}
-                    onPress={() => handleSelect(item)}
-                    style={({ pressed }) => [
-                      styles.userOptionItem,
-                      isSelected && styles.userOptionItemSelected,
-                      pressed && styles.userOptionItemPressed,
-                    ]}
-                  >
-                    <View style={styles.userAvatarBox}>
-                      <Text style={styles.userAvatarInitial}>
-                        {item.FullName.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    
-                    <View style={styles.userInfoCol}>
-                      <Text style={[styles.userOptionName, isSelected && styles.userOptionNameSelected]}>
-                        {item.FullName}
-                      </Text>
-                      {item.RoleName && (
-                        <Text style={styles.userOptionRole}>{item.RoleName}</Text>
-                      )}
-                    </View>
-
-                    {isSelected && <Check size={16} color="#2563eb" />}
-                  </Pressable>
-                );
-              })
-            )}
-          </ScrollView>
-        </View>
-      )}
-    </View>
+      {/* Portal Dropdown renders directly on document.body — no overflow clipping */}
+      {dropdownPortal}
+    </>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'relative',
-    zIndex: 100,
-  },
-  triggerWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 52,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-  },
-  triggerWrapperFocused: {
-    borderColor: '#2563EB',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  triggerTextContainer: {
-    flex: 1,
-  },
-  selectedNameText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  placeholderText: {
-    fontSize: 15,
-    color: '#9ca3af',
-  },
-  loadingSkeletonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  skeletonText: {
-    fontSize: 14,
-    color: '#64748b',
-    fontStyle: 'italic',
-  },
-  dropdownPopover: {
-    position: 'absolute',
-    top: 58,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 12,
-    zIndex: 999,
-    padding: 8,
-    maxHeight: 280,
-  },
-  searchBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 12,
-    height: 38,
-    marginBottom: 6,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    color: '#0F172A',
-    outlineStyle: 'none' as any,
-  },
-  userListScroll: {
-    maxHeight: 210,
-  },
-  skeletonContainer: {
-    padding: 8,
-    gap: 12,
-  },
-  skeletonItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  skeletonAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#E2E8F0',
-  },
-  skeletonLines: {
-    flex: 1,
-    gap: 6,
-  },
-  skeletonLine: {
-    height: 12,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 4,
-  },
-  emptyStateContainer: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyStateText: {
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: '500',
-  },
-  userOptionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 10,
-    gap: 10,
-  },
-  userOptionItemSelected: {
-    backgroundColor: '#EFF6FF',
-  },
-  userOptionItemPressed: {
-    backgroundColor: '#F1F5F9',
-  },
-  userAvatarBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#DBEAFE',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  userAvatarInitial: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#2563EB',
-  },
-  userInfoCol: {
-    flex: 1,
-  },
-  userOptionName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  userOptionNameSelected: {
-    color: '#2563EB',
-  },
-  userOptionRole: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-});
