@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: clindex-backend
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start:server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_SERVER
+        value: vtsdatabasen.database.windows.net
+      - key: DB_USER
+        value: admincicto
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        value: ClindexDatabaseN
+      - key: DB_PORT
+        value: "1433"
+      - key: DB_ENCRYPT
+        value: "true"
