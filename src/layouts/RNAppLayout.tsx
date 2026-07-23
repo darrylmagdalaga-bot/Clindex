@@ -58,15 +58,15 @@ export function RNAppLayout() {
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', backgroundColor: '#f8fafc' }}>
-      {/* Background Dashboard / Workspace (Pre-rendered or Animated Focus) */}
+      {/* Background Dashboard / Workspace (Pre-rendered or Animated Focus Emergence) */}
       <motion.div
         initial={false}
         animate={
           isAuthenticated
             ? { opacity: 1, scale: 1, filter: 'blur(0px)' }
-            : { opacity: 0, scale: 1.03, filter: 'blur(10px)' }
+            : { opacity: 0.25, scale: 1.02, filter: 'blur(4px)' }
         }
-        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
         style={{
           position: 'absolute',
           inset: 0,
@@ -74,6 +74,7 @@ export function RNAppLayout() {
           flexDirection: 'row',
           zIndex: isAuthenticated ? 10 : 1,
           pointerEvents: isAuthenticated ? 'auto' : 'none',
+          willChange: 'opacity, transform, filter',
         }}
       >
         <RNSidebar
@@ -144,11 +145,12 @@ export function RNAppLayout() {
             key="login-screen-layer"
             initial={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
             style={{
               position: 'absolute',
               inset: 0,
               zIndex: 20,
+              willChange: 'opacity',
             }}
           >
             <RNLoginScreen onLoginSuccess={handleLoginSuccess} />

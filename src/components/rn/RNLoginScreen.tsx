@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, useWindowDimensions } from 'react-native';
 import { Lock, Building2, Check, ArrowRight, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
 import { UserCombobox } from '@/components/ui/UserCombobox';
 import { loginUser, AuthUser } from '@/services/authApi';
@@ -38,7 +38,7 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
       return;
     }
 
-    // Step 0: Lock inputs, set "Authenticating...", button compress (250ms)
+    // Step 0: Lock inputs, set "Authenticating...", 200ms button compression
     setIsAuthenticating(true);
 
     try {
@@ -46,15 +46,15 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
       if (result.success && result.user) {
         setAuthUser(result.user);
         
-        // Stage One: Card sinking animation (500ms)
+        // Immediate overlapping response: Card sinks, background subtle breathing zoom begins at T = 150ms
         setTimeout(() => {
           setIsSinking(true);
-        }, 250);
+        }, 150);
 
-        // Stage Three: Translucent glass overlay appears
+        // Atmospheric overlay fades in at T = 300ms (dashboard already visible behind translucent glass)
         setTimeout(() => {
           setShowOverlay(true);
-        }, 650);
+        }, 300);
 
       } else {
         setIsAuthenticating(false);
@@ -93,14 +93,14 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
         backgroundColor: '#F8FAFC',
         overflow: 'hidden',
         position: 'relative',
+        willChange: 'transform',
       }}
       animate={{
-        scale: isSinking ? 1.08 : 1.00,
-        filter: isSinking ? 'blur(2px)' : 'blur(0px)',
+        scale: isSinking ? 1.04 : 1.00,
       }}
-      transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1] }}
     >
-      {/* Fullscreen Reusable Loading Overlay */}
+      {/* Fullscreen Reusable Atmospheric Glass Overlay */}
       <LoadingOverlay
         visible={showOverlay}
         onComplete={handleOverlayComplete}
@@ -139,23 +139,21 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
       {/* RIGHT LOGIN FORM PANEL (~45%) */}
       <View style={styles.rightPanel}>
         <motion.div
-          style={{ width: '100%', maxWidth: 460 }}
+          style={{ width: '100%', maxWidth: 460, willChange: 'transform, opacity, filter' }}
           animate={
             isSinking
               ? {
-                  y: 70,
+                  y: 60,
                   opacity: 0,
-                  scale: 0.94,
-                  filter: 'blur(8px)',
+                  scale: 0.96,
                 }
               : {
                   y: 0,
                   opacity: 1,
                   scale: 1,
-                  filter: 'blur(0px)',
                 }
           }
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
         >
           <View style={styles.loginCard}>
             <View style={styles.cardHeaderIconBox}>
@@ -232,7 +230,7 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
               {/* Primary Sign In Button with Morphing Animation */}
               <motion.div
                 animate={isAuthenticating ? { scale: 0.98 } : { scale: 1 }}
-                transition={{ duration: 0.25, ease: 'easeOut' }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
               >
                 <Pressable
                   onPress={handleSubmit}
