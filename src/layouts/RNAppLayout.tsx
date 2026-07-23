@@ -36,6 +36,12 @@ export function RNAppLayout() {
     }
   };
 
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setCurrentUser(null);
+    setActiveTab('dashboard');
+  };
+
   const handleLoginSuccess = (user: AuthUser) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
@@ -69,7 +75,11 @@ export function RNAppLayout() {
         userRole={userRole}
       />
       <View style={styles.mainArea}>
-        <RNHeader activeTabLabel={getTabLabel(activeTab)} />
+        <RNHeader
+          activeTabLabel={getTabLabel(activeTab)}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+        />
 
         {/* Role & Auth Bar */}
         <View style={styles.roleBar}>
@@ -89,10 +99,10 @@ export function RNAppLayout() {
           ))}
 
           <Pressable
-            onPress={() => setIsAuthenticated(false)}
+            onPress={handleLogout}
             style={styles.signOutBtn}
           >
-            <Text style={styles.signOutText}>← Lock / Sign Out</Text>
+            <Text style={styles.signOutText}>← Sign Out</Text>
           </Pressable>
         </View>
 

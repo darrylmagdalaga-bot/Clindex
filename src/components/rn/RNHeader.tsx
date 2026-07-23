@@ -11,20 +11,30 @@ import {
   ClipboardList,
   Mail,
   Building,
+  LogOut,
+  User,
+  Settings,
+  Shield,
 } from 'lucide-react';
+import type { AuthUser } from '@/services/authApi';
 
 interface RNHeaderProps {
   activeTabLabel?: string;
   onSearchChange?: (text: string) => void;
   onQuickAddSelect?: (type: string) => void;
+  currentUser?: AuthUser | null;
+  onLogout?: () => void;
 }
 
 export const RNHeader: React.FC<RNHeaderProps> = ({
   activeTabLabel = 'Dashboard',
   onSearchChange,
   onQuickAddSelect,
+  currentUser,
+  onLogout,
 }) => {
   const [showQuickAddMenu, setShowQuickAddMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   const QUICK_ADD_OPTIONS = [
     { id: 'ordinance', label: 'New Ordinance', icon: ScrollText, desc: 'Draft local municipal law' },
@@ -33,6 +43,21 @@ export const RNHeader: React.FC<RNHeaderProps> = ({
     { id: 'communication', label: 'Communication', icon: Mail, desc: 'Log official correspondence' },
     { id: 'executive', label: 'Executive Order', icon: Building, desc: 'Register executive directive' },
   ];
+
+  const initials = currentUser?.FullName
+    ? currentUser.FullName.split(' ').slice(0, 2).map((n) => n[0]).join('').toUpperCase()
+    : 'AU';
+
+  const handleLogout = async () => {
+    setShowUserMenu(false);
+    try {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+      await fetch(`${apiBase}/auth/logout`, { method: 'POST' });
+    } catch (_) {
+      // Logout works client-side regardless
+    }
+    onLogout?.();
+  };
 
   return (
     <View style={styles.header}>
@@ -57,16 +82,13 @@ export const RNHeader: React.FC<RNHeaderProps> = ({
         </View>
       </View>
 
-      {/* Right Actions: Quick Add, Notifications, Calendar */}
+      {/* Right Actions */}
       <View style={styles.actionsGroup}>
-        {/* Quick Add Dropdown Container */}
+        {/* Quick Add Dropdown */}
         <View style={styles.quickAddWrapper}>
           <Pressable
-            onPress={() => setShowQuickAddMenu(!showQuickAddMenu)}
-            style={({ pressed }) => [
-              styles.quickAddBtn,
-              pressed && styles.quickAddBtnPressed,
-            ]}
+            onPress={() => { setShowQuickAddMenu(!showQuickAddMenu); setShowUserMenu(false); }}
+            style={({ pressed }) => [styles.quickAddBtn, pressed && styles.quickAddBtnPressed]}
             accessibilityRole="button"
             accessibilityLabel="Quick Add Document"
           >
@@ -83,14 +105,8 @@ export const RNHeader: React.FC<RNHeaderProps> = ({
                 return (
                   <Pressable
                     key={option.id}
-                    onPress={() => {
-                      setShowQuickAddMenu(false);
-                      onQuickAddSelect?.(option.id);
-                    }}
-                    style={({ pressed }) => [
-                      styles.dropdownItem,
-                      pressed && styles.dropdownItemPressed,
-                    ]}
+                    onPress={() => { setShowQuickAddMenu(false); onQuickAddSelect?.(option.id); }}
+                    style={({ pressed }) => [styles.dropdownItem, pressed && styles.dropdownItemPressed]}
                   >
                     <View style={styles.optionIconBox}>
                       <Icon size={16} color="#2563eb" />
@@ -106,12 +122,9 @@ export const RNHeader: React.FC<RNHeaderProps> = ({
           )}
         </View>
 
-        {/* Action Icon Buttons */}
+        {/* Notification Bell */}
         <Pressable
-          style={({ pressed }) => [
-            styles.iconButton,
-            pressed && styles.iconButtonPressed,
-          ]}
+          style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
           accessibilityLabel="Notifications"
         >
           <Bell size={18} color="#475569" />
@@ -120,15 +133,72 @@ export const RNHeader: React.FC<RNHeaderProps> = ({
           </View>
         </Pressable>
 
+        {/* Calendar */}
         <Pressable
-          style={({ pressed }) => [
-            styles.iconButton,
-            pressed && styles.iconButtonPressed,
-          ]}
+          style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
           accessibilityLabel="Calendar"
         >
           <Calendar size={18} color="#475569" />
         </Pressable>
+
+        {/* User Avatar + Logout Dropdown */}
+        <View style={styles.userAvatarWrapper}>
+          <Pressable
+            onPress={() => { setShowUserMenu(!showUserMenu); setShowQuickAddMenu(false); }}
+            style={({ pressed }) => [styles.avatarButton, pressed && styles.avatarButtonPressed]}
+            accessibilityLabel="User menu"
+          >
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarInitials}>{initials}</Text>
+            </View>
+            <ChevronDown size={14} color="#475569" />
+          </Pressable>
+
+          {showUserMenu && (
+            <View style={styles.userDropdown}>
+              {/* User Identity Header */}
+              <View style={styles.userDropdownHeader}>
+                <View style={styles.userDropdownAvatar}>
+                  <Text style={styles.userDropdownAvatarText}>{initials}</Text>
+                </View>
+                <View style={styles.userDropdownMeta}>
+                  <Text style={styles.userDropdownName} numberOfLines={1}>
+                    {currentUser?.FullName || 'Admin User'}
+                  </Text>
+                  <View style={styles.roleBadge}>
+                    <Shield size={11} color="#2563eb" />
+                    <Text style={styles.roleBadgeText}>{currentUser?.RoleName || 'Administrator'}</Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.userDropdownDivider} />
+
+              {/* Menu Items */}
+              <Pressable style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}>
+                <User size={15} color="#475569" />
+                <Text style={styles.userMenuItemText}>My Profile</Text>
+              </Pressable>
+
+              <Pressable style={({ pressed }) => [styles.userMenuItem, pressed && styles.userMenuItemPressed]}>
+                <Settings size={15} color="#475569" />
+                <Text style={styles.userMenuItemText}>Account Settings</Text>
+              </Pressable>
+
+              <View style={styles.userDropdownDivider} />
+
+              {/* Logout Button */}
+              <Pressable
+                onPress={handleLogout}
+                style={({ pressed }) => [styles.userMenuItem, styles.userMenuItemLogout, pressed && styles.userMenuItemLogoutPressed]}
+                accessibilityLabel="Sign Out"
+              >
+                <LogOut size={15} color="#ef4444" />
+                <Text style={styles.userMenuItemLogoutText}>Sign Out</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -204,7 +274,7 @@ const styles = StyleSheet.create({
   actionsGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   quickAddWrapper: {
     position: 'relative',
@@ -316,5 +386,131 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 9,
     fontWeight: '800',
+  },
+  // ── User Avatar & Dropdown ──────────────────────────────────────────────
+  userAvatarWrapper: {
+    position: 'relative',
+    zIndex: 60,
+  },
+  avatarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+  },
+  avatarButtonPressed: {
+    backgroundColor: '#e2e8f0',
+  },
+  avatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#2563eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitials: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#ffffff',
+    letterSpacing: 0.5,
+  },
+  userDropdown: {
+    position: 'absolute',
+    top: 48,
+    right: 0,
+    width: 240,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    zIndex: 100,
+  },
+  userDropdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    marginBottom: 4,
+  },
+  userDropdownAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#2563eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userDropdownAvatarText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#ffffff',
+  },
+  userDropdownMeta: {
+    flex: 1,
+  },
+  userDropdownName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 4,
+  },
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  roleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  userDropdownDivider: {
+    height: 1,
+    backgroundColor: '#f1f5f9',
+    marginVertical: 4,
+  },
+  userMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 10,
+    borderRadius: 10,
+  },
+  userMenuItemPressed: {
+    backgroundColor: '#f1f5f9',
+  },
+  userMenuItemText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  userMenuItemLogout: {
+    marginTop: 2,
+  },
+  userMenuItemLogoutPressed: {
+    backgroundColor: '#fef2f2',
+  },
+  userMenuItemLogoutText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#ef4444',
   },
 });
