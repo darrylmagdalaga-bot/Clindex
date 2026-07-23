@@ -5,6 +5,7 @@ import { RNSidebar } from '@/components/rn/RNSidebar';
 import { RNHeader } from '@/components/rn/RNHeader';
 import { RNDashboard } from '@/components/rn/RNDashboard';
 import { RNDeveloperConsole } from '@/components/rn/RNDeveloperConsole';
+import { RNDocumentEntryModule } from '@/components/rn/RNDocumentEntryModule';
 import { RNLoginScreen } from '@/components/rn/RNLoginScreen';
 import { AuthUser } from '@/services/authApi';
 
@@ -129,6 +130,8 @@ export function RNAppLayout() {
               >
                 {activeTab === 'developer' ? (
                   <RNDeveloperConsole userRole={userRole} />
+                ) : activeTab === 'create' ? (
+                  <RNDocumentEntryModule />
                 ) : (
                   <RNDashboard />
                 )}

@@ -236,6 +236,11 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
+import { createDocumentEndpoints } from './documentEndpoints.js';
+
+// Register Document Entry & Reference Metadata Endpoints
+createDocumentEndpoints(app);
+
 // Documents API Endpoint
 app.get('/api/documents', async (req, res) => {
   try {
