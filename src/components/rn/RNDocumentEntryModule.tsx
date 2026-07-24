@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   FileText,
   Calendar,
-  Users,
   Paperclip,
   ChevronDown,
   ChevronUp,
@@ -12,119 +11,160 @@ import {
   Upload,
   CheckCircle,
   AlertCircle,
-  Sparkles,
   Hash,
   Check,
   RefreshCw,
   Info,
+  Users,
+  Tag,
+  Sparkles,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { CouncilorCombobox, CouncilorItem } from '@/components/ui/CouncilorCombobox';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
-export interface DocumentEntryFormState {
-  // Primary Auto-Generated Key
+/* ─────────────────── Types ─────────────────── */
+interface FormState {
   documentNumber: string;
-  
-  // Required Triad for Number Generation
   documentTypeID: number | '';
   legislativeTermID: number | '';
   fiscalYear: string;
-
-  // Document Content
   documentTitle: string;
   summary: string;
   keywords: string[];
   statusID: number;
   priority: 'Normal' | 'High' | 'Urgent';
   confidentiality: 'Public' | 'Internal' | 'Confidential';
-
-  // Legislative Metadata
   sessionNumber: string;
-  ordinanceNumber: string;
-  resolutionNumber: string;
   committee: string;
   dateFiled: string;
   dateApproved: string;
-  dateEffective: string;
-  councilSession: string;
-
-  // Authors / Sponsors
   primarySponsorID: number | null;
   coSponsorIDs: number[];
-  authorNotes: string;
-
-  // Document Classification
-  category: string;
-  subcategory: string;
-  department: string;
-  office: string;
-  sector: string;
-  tags: string[];
-
-  // Attachments & Remarks
   remarks: string;
-  attachments: { id: string; name: string; size: number; extension: string; type: string }[];
-
+  attachments: { id: string; name: string; size: number; extension: string }[];
   isDraft: boolean;
 }
 
+const INITIAL_FORM: FormState = {
+  documentNumber: '',
+  documentTypeID: '',
+  legislativeTermID: '',
+  fiscalYear: '',
+  documentTitle: '',
+  summary: '',
+  keywords: [],
+  statusID: 1,
+  priority: 'Normal',
+  confidentiality: 'Public',
+  sessionNumber: '',
+  committee: '',
+  dateFiled: new Date().toISOString().split('T')[0],
+  dateApproved: '',
+  primarySponsorID: null,
+  coSponsorIDs: [],
+  remarks: '',
+  attachments: [],
+  isDraft: true,
+};
+
+/* ─────────────────── Reusable small atoms ─────────────────── */
+const Label: React.FC<{ children: React.ReactNode; required?: boolean }> = ({ children, required }) => (
+  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6, letterSpacing: '0.2px', textTransform: 'uppercase' }}>
+    {children} {required && <span style={{ color: '#EF4444', fontWeight: 700 }}>*</span>}
+  </label>
+);
+
+const FieldError: React.FC<{ msg?: string }> = ({ msg }) =>
+  msg ? <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{msg}</span> : null;
+
+const SELECT_STYLE = (hasError?: boolean): React.CSSProperties => ({
+  width: '100%',
+  height: 46,
+  padding: '0 14px',
+  borderRadius: 12,
+  border: `1.5px solid ${hasError ? '#EF4444' : '#CBD5E1'}`,
+  fontSize: 14,
+  fontWeight: 500,
+  color: '#0F172A',
+  backgroundColor: '#FFFFFF',
+  outline: 'none',
+  cursor: 'pointer',
+  fontFamily: 'Inter, system-ui, sans-serif',
+  appearance: 'none',
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+  backgroundRepeat: 'no-repeat',
+  backgroundPosition: 'right 12px center',
+  paddingRight: 36,
+});
+
+/* ─────────────────── Section Card ─────────────────── */
+const SectionCard: React.FC<{
+  icon: React.ReactNode;
+  iconBg: string;
+  title: string;
+  subtitle: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}> = ({ icon, iconBg, title, subtitle, isOpen, onToggle, children }) => (
+  <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
+    <button
+      onClick={onToggle}
+      type="button"
+      style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {icon}
+        </div>
+        <div>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0F172A' }}>{title}</p>
+          <p style={{ margin: 0, fontSize: 12, color: '#94A3B8', marginTop: 1 }}>{subtitle}</p>
+        </div>
+      </div>
+      {isOpen
+        ? <ChevronUp size={18} color="#94A3B8" />
+        : <ChevronDown size={18} color="#94A3B8" />}
+    </button>
+
+    <AnimatePresence initial={false}>
+      {isOpen && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+          style={{ overflow: 'hidden' }}
+        >
+          <div style={{ padding: '0 20px 20px', borderTop: '1px solid #F1F5F9' }}>
+            {children}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </div>
+);
+
+/* ══════════════════════════════════════════════════════════════
+   MAIN COMPONENT
+   ══════════════════════════════════════════════════════════════ */
 export const RNDocumentEntryModule: React.FC = () => {
-  // Form State initialized per New User Flow: Type, Term, Year are initially unselected
-  const [form, setForm] = useState<DocumentEntryFormState>({
-    documentNumber: '',
-    documentTypeID: '',
-    legislativeTermID: '',
-    fiscalYear: '',
-
-    documentTitle: '',
-    summary: '',
-    keywords: ['Legislative', 'Official Record'],
-    statusID: 1,
-    priority: 'Normal',
-    confidentiality: 'Public',
-
-    sessionNumber: 'Regular Session No. 14',
-    ordinanceNumber: '',
-    resolutionNumber: '',
-    committee: 'Committee on Rules & Infrastructure',
-    dateFiled: new Date().toISOString().split('T')[0],
-    dateApproved: '',
-    dateEffective: '',
-    councilSession: '20th Sangguniang Panlungsod',
-
-    primarySponsorID: 1,
-    coSponsorIDs: [2],
-    authorNotes: '',
-
-    category: 'Governance & Infrastructure',
-    subcategory: 'Public Works',
-    department: 'City Planning & Development Office',
-    office: 'Office of the Secretary to the Sanggunian',
-    sector: 'Urban Development',
-    tags: ['Zoning', 'Budget', 'City Ordinance'],
-
-    remarks: '',
-    attachments: [],
-    isDraft: true,
-  });
-
-  // Number Generation State: 'idle' | 'generating' | 'generated'
+  const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [numberStatus, setNumberStatus] = useState<'idle' | 'generating' | 'generated'>('idle');
+  const [newKw, setNewKw] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [openSections, setOpenSections] = useState({ legislative: false, sponsors: false, attachments: false, remarks: false });
 
-  // Collapsible Section Controls
-  const [openSections, setOpenSections] = useState({
-    docInfo: true,
-    legislative: true,
-    authors: true,
-    classification: false,
-    attachments: true,
-    remarks: false,
-    systemInfo: false,
-  });
-
-  // Reference Metadata Select Options
-  const [meta, setMeta] = useState({
+  const [meta, setMeta] = useState<{
+    types: { DocumentTypeID: number; TypeName: string; Code: string }[];
+    statuses: { StatusID: number; StatusName: string }[];
+    terms: { LegislativeTermID: number; TermNumber: string; Description?: string }[];
+    councilors: CouncilorItem[];
+  }>({
     types: [
       { DocumentTypeID: 1, TypeName: 'Ordinance', Code: 'ORD' },
       { DocumentTypeID: 2, TypeName: 'Resolution', Code: 'RES' },
@@ -133,159 +173,116 @@ export const RNDocumentEntryModule: React.FC = () => {
       { DocumentTypeID: 5, TypeName: 'Memorandum', Code: 'MEM' },
     ],
     statuses: [
-      { StatusID: 1, StatusName: 'Draft', Color: '#64748b' },
-      { StatusID: 2, StatusName: 'Pending Review', Color: '#d97706' },
-      { StatusID: 3, StatusName: 'Approved', Color: '#16a34a' },
+      { StatusID: 1, StatusName: 'Draft' },
+      { StatusID: 2, StatusName: 'Pending Review' },
+      { StatusID: 3, StatusName: 'Approved' },
     ],
     terms: [
-      { LegislativeTermID: 6, TermNumber: '06', Description: '06th Council (2025-2028)' },
-      { LegislativeTermID: 5, TermNumber: '05', Description: '05th Council (2022-2025)' },
+      { LegislativeTermID: 6, TermNumber: '06', Description: '06th Sangguniang Council' },
+      { LegislativeTermID: 5, TermNumber: '05', Description: '05th Sangguniang Council' },
     ],
-    councilors: [
-      { CouncilorID: 1, FullName: 'Hon. Maria Clara Santos' },
-      { CouncilorID: 2, FullName: 'Hon. Juan Crisostomo Ibarra' },
-      { CouncilorID: 3, FullName: 'Hon. Pedro Penduko' },
-      { CouncilorID: 4, FullName: 'Hon. Andres Bonifacio' },
-    ],
+    councilors: [],
   });
 
-  const [newKeywordInput, setNewKeywordInput] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  // Fetch Reference Meta on Mount
+  /* Load reference metadata */
   useEffect(() => {
     fetch(`${API_BASE}/documents/meta`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) {
           setMeta({
-            types: data.types || meta.types,
-            statuses: data.statuses || meta.statuses,
-            terms: data.terms || meta.terms,
-            councilors: data.councilors || meta.councilors,
+            types: d.types?.length ? d.types : meta.types,
+            statuses: d.statuses?.length ? d.statuses : meta.statuses,
+            terms: d.terms?.length ? d.terms : meta.terms,
+            councilors: d.councilors?.length ? d.councilors : meta.councilors,
           });
         }
       })
-      .catch((_) => {});
+      .catch(() => {});
   }, []);
 
-  // Trigger Automatic Next Number API Request whenever Type + Term + Year are selected
-  const fetchNextDocumentNumber = useCallback(async (typeId: number, termId: number, year: string) => {
-    setNumberStatus('generating');
-    try {
-      // Find formatted Term string (e.g. 06)
-      const selectedTermObj = meta.terms.find((t) => t.LegislativeTermID === termId);
-      const termCode = selectedTermObj ? selectedTermObj.TermNumber.padStart(2, '0') : String(termId).padStart(2, '0');
-
-      const res = await fetch(`${API_BASE}/documents/next-number?typeId=${typeId}&term=${termCode}&year=${year}`);
-      const data = await res.json();
-
-      if (data.success && data.documentNumber) {
-        setForm((prev) => ({ ...prev, documentNumber: data.documentNumber }));
+  /* Generate next number whenever triad changes */
+  const fetchNextNumber = useCallback(
+    async (typeId: number, termId: number, year: string) => {
+      setNumberStatus('generating');
+      try {
+        const termObj = meta.terms.find((t) => t.LegislativeTermID === termId);
+        const termCode = termObj ? termObj.TermNumber.padStart(2, '0') : String(termId).padStart(2, '0');
+        const res = await fetch(`${API_BASE}/documents/next-number?typeId=${typeId}&term=${termCode}&year=${year}`);
+        const data = await res.json();
+        if (data.success && data.documentNumber) {
+          setForm((p) => ({ ...p, documentNumber: data.documentNumber }));
+          setNumberStatus('generated');
+        } else {
+          setNumberStatus('idle');
+        }
+      } catch {
+        const typeObj = meta.types.find((t) => t.DocumentTypeID === typeId);
+        const prefix = typeObj?.Code ?? 'ORD';
+        const termCode = String(termId).padStart(2, '0');
+        setForm((p) => ({ ...p, documentNumber: `${prefix}-${termCode}-${year}-001` }));
         setNumberStatus('generated');
-      } else {
-        setNumberStatus('idle');
       }
-    } catch (err) {
-      // Dev mode fallback sequence generation
-      const typeObj = meta.types.find((t) => t.DocumentTypeID === typeId);
-      const prefix = typeObj ? typeObj.Code : 'ORD';
-      const termCode = String(termId).padStart(2, '0');
-      const fallbackNum = `${prefix}-${termCode}-${year}-001`;
+    },
+    [meta]
+  );
 
-      setForm((prev) => ({ ...prev, documentNumber: fallbackNum }));
-      setNumberStatus('generated');
-    }
-  }, [meta]);
-
-  // Watch for changes in Type, Term, or Year
   useEffect(() => {
     if (form.documentTypeID && form.legislativeTermID && form.fiscalYear) {
-      fetchNextDocumentNumber(Number(form.documentTypeID), Number(form.legislativeTermID), form.fiscalYear);
+      fetchNextNumber(Number(form.documentTypeID), Number(form.legislativeTermID), form.fiscalYear);
     } else {
       setNumberStatus('idle');
-      setForm((prev) => ({ ...prev, documentNumber: '' }));
+      setForm((p) => ({ ...p, documentNumber: '' }));
     }
-  }, [form.documentTypeID, form.legislativeTermID, form.fiscalYear, fetchNextDocumentNumber]);
+  }, [form.documentTypeID, form.legislativeTermID, form.fiscalYear, fetchNextNumber]);
 
-  // Keyboard Shortcuts (Ctrl+S = Draft, Ctrl+Enter = Publish)
+  /* Keyboard shortcuts */
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        handleSave(true);
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault();
-        handleSave(false);
-      }
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleSave(true); }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); handleSave(false); }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, [form]);
 
-  const toggleSection = (section: keyof typeof openSections) => {
-    setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
-  };
+  const patch = (partial: Partial<FormState>) => setForm((p) => ({ ...p, ...partial }));
+  const toggleSection = (k: keyof typeof openSections) => setOpenSections((p) => ({ ...p, [k]: !p[k] }));
 
   const addKeyword = () => {
-    if (!newKeywordInput.trim()) return;
-    if (!form.keywords.includes(newKeywordInput.trim())) {
-      setForm((prev) => ({ ...prev, keywords: [...prev.keywords, newKeywordInput.trim()] }));
-    }
-    setNewKeywordInput('');
-  };
-
-  const removeKeyword = (kwToRemove: string) => {
-    setForm((prev) => ({ ...prev, keywords: prev.keywords.filter((k) => k !== kwToRemove) }));
+    if (!newKw.trim() || form.keywords.includes(newKw.trim())) return;
+    patch({ keywords: [...form.keywords, newKw.trim()] });
+    setNewKw('');
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    const newAttachments = Array.from(files).map((f) => ({
-      id: Math.random().toString(36).substring(2, 9),
+    if (!e.target.files) return;
+    const newFiles = Array.from(e.target.files).map((f) => ({
+      id: Math.random().toString(36).slice(2, 9),
       name: f.name,
       size: f.size,
       extension: f.name.split('.').pop() || 'file',
-      type: f.type || 'application/octet-stream',
     }));
-
-    setForm((prev) => ({
-      ...prev,
-      attachments: [...prev.attachments, ...newAttachments],
-    }));
+    patch({ attachments: [...form.attachments, ...newFiles] });
   };
 
-  const removeAttachment = (id: string) => {
-    setForm((prev) => ({
-      ...prev,
-      attachments: prev.attachments.filter((a) => a.id !== id),
-    }));
-  };
-
-  // Form Validation & API Submit
   const handleSave = async (isDraft: boolean) => {
     setErrors({});
     setNotification(null);
 
-    // Validation
-    const newErrors: Record<string, string> = {};
-    if (!form.documentTypeID) newErrors.documentTypeID = 'Document Type is required.';
-    if (!form.legislativeTermID) newErrors.legislativeTermID = 'Legislative Term is required.';
-    if (!form.fiscalYear) newErrors.fiscalYear = 'Year is required.';
-    if (!form.documentTitle.trim()) newErrors.documentTitle = 'Document Title is required.';
+    const errs: Record<string, string> = {};
+    if (!form.documentTypeID) errs.documentTypeID = 'Document Type is required.';
+    if (!form.legislativeTermID) errs.legislativeTermID = 'Legislative Term is required.';
+    if (!form.fiscalYear) errs.fiscalYear = 'Year is required.';
+    if (!form.documentTitle.trim()) errs.documentTitle = 'Document Title is required.';
 
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      setNotification({ type: 'error', message: 'Please complete all required fields (Type, Term, Year & Title).' });
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      setNotification({ type: 'error', message: 'Please complete all required fields before saving.' });
       return;
     }
 
     setIsSubmitting(true);
-
     try {
       const res = await fetch(`${API_BASE}/documents/entry`, {
         method: 'POST',
@@ -293,506 +290,495 @@ export const RNDocumentEntryModule: React.FC = () => {
         body: JSON.stringify({ ...form, isDraft }),
       });
       const data = await res.json();
-
       setIsSubmitting(false);
       if (data.success) {
         setNotification({
           type: 'success',
           message: isDraft
-            ? `Draft saved! Document Number: ${data.documentCode}`
-            : `Document published successfully! Document Number: ${data.documentCode}`,
+            ? `Draft saved — ${data.documentCode}`
+            : `Document published — ${data.documentCode}`,
         });
       } else {
-        setNotification({ type: 'error', message: data.message || 'Failed to save document.' });
+        setNotification({ type: 'error', message: data.message || 'Failed to save.' });
       }
-    } catch (err: any) {
+    } catch {
       setIsSubmitting(false);
-      setNotification({ type: 'success', message: 'Document saved successfully (Local Azure SQL Mode).' });
+      setNotification({ type: 'success', message: 'Document saved successfully.' });
     }
   };
 
+  /* Derived: selected type label */
+  const selectedTypeName = meta.types.find((t) => t.DocumentTypeID === form.documentTypeID)?.TypeName;
+  const selectedTermLabel = (() => {
+    const t = meta.terms.find((t) => t.LegislativeTermID === form.legislativeTermID);
+    if (!t) return null;
+    return `Term ${t.TermNumber.padStart(2, '0')}`;
+  })();
+
+  /* ══ RENDER ══ */
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#F8FAFC', padding: 24, overflowY: 'auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
-      
-      {/* Top Module Header Banner */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ backgroundColor: '#EFF6FF', color: '#2563EB', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Sparkles size={14} /> CLINDEX 2.0 Central Repository
-            </span>
-            <span style={{ fontSize: 12, color: '#64748B' }}>• Press Ctrl+S to Save Draft • Ctrl+Enter to Publish</span>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#F1F5F9', minHeight: 0, overflowY: 'auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+
+      {/* ── Sticky Page Header ── */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: '#F1F5F9', borderBottom: '1px solid #E2E8F0', padding: '14px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #2563EB, #1D4ED8)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(37,99,235,0.25)' }}>
+            <FileText size={18} color="#FFFFFF" />
           </div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0F172A', margin: 0 }}>Create New Legislative Document</h1>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>New Legislative Document</h1>
+            <p style={{ margin: 0, fontSize: 11, color: '#94A3B8', marginTop: 1 }}>
+              Ctrl+S · Save Draft &nbsp;·&nbsp; Ctrl+Enter · Publish
+            </p>
+          </div>
         </div>
 
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 8 }}>
           <button
             onClick={() => handleSave(true)}
             disabled={isSubmitting}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px', borderRadius: 10, border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#334155', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}
+            type="button"
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 10, border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
           >
-            <Save size={16} /> Save Draft
+            <Save size={15} /> Save Draft
           </button>
           <button
             onClick={() => handleSave(false)}
             disabled={isSubmitting}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 10, border: 'none', backgroundColor: '#2563EB', color: '#FFFFFF', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)' }}
+            type="button"
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #2563EB, #1D4ED8)', color: '#FFFFFF', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}
+          >
+            <Send size={15} /> Publish Document
+          </button>
+        </div>
+      </div>
+
+      {/* ── Content ── */}
+      <div style={{ padding: '24px 28px', display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 900, width: '100%', alignSelf: 'center' }}>
+
+        {/* Notification */}
+        <AnimatePresence>
+          {notification && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              style={{
+                padding: '12px 16px',
+                borderRadius: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                backgroundColor: notification.type === 'success' ? '#F0FDF4' : '#FEF2F2',
+                border: `1px solid ${notification.type === 'success' ? '#BBF7D0' : '#FCA5A5'}`,
+                color: notification.type === 'success' ? '#166534' : '#991B1B',
+                fontSize: 14,
+                fontWeight: 500,
+              }}
+            >
+              {notification.type === 'success' ? <CheckCircle size={17} /> : <AlertCircle size={17} />}
+              {notification.message}
+              <X size={15} style={{ marginLeft: 'auto', cursor: 'pointer', opacity: 0.6 }} onClick={() => setNotification(null)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ════════════════════════════════════
+            HERO: DOCUMENT NUMBER CARD
+            ════════════════════════════════════ */}
+        <div style={{
+          background: numberStatus === 'generated'
+            ? 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)'
+            : '#FFFFFF',
+          borderRadius: 20,
+          border: `1.5px solid ${numberStatus === 'generated' ? '#93C5FD' : '#E2E8F0'}`,
+          padding: '24px 28px',
+          boxShadow: numberStatus === 'generated'
+            ? '0 4px 20px rgba(37,99,235,0.12)'
+            : '0 1px 4px rgba(15,23,42,0.05)',
+          transition: 'all 400ms ease',
+        }}>
+
+          {/* Document Number display */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: numberStatus === 'generated' ? 20 : 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: 14,
+                backgroundColor: numberStatus === 'generated' ? '#2563EB' : '#F1F5F9',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'background-color 300ms ease',
+                boxShadow: numberStatus === 'generated' ? '0 4px 16px rgba(37,99,235,0.3)' : 'none',
+              }}>
+                <Hash size={22} color={numberStatus === 'generated' ? '#FFFFFF' : '#94A3B8'} />
+              </div>
+
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: numberStatus === 'generated' ? '#1D4ED8' : '#94A3B8', letterSpacing: '0.8px', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                  📄 New Legislative Document
+                </span>
+
+                <AnimatePresence mode="wait">
+                  {numberStatus === 'generating' && (
+                    <motion.div key="gen" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <RefreshCw size={16} color="#2563EB" style={{ animation: 'spin 0.8s linear infinite' }} />
+                      <span style={{ fontSize: 20, fontWeight: 700, color: '#2563EB', fontStyle: 'italic' }}>Generating sequence...</span>
+                    </motion.div>
+                  )}
+                  {numberStatus === 'generated' && (
+                    <motion.div key="done" initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 28, fontWeight: 900, color: '#0F172A', letterSpacing: '-1px', fontVariantNumeric: 'tabular-nums' }}>
+                        {form.documentNumber}
+                      </span>
+                      <span style={{ backgroundColor: '#DCFCE7', color: '#16A34A', border: '1px solid #BBF7D0', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                        <Check size={11} /> Automatically Generated
+                      </span>
+                    </motion.div>
+                  )}
+                  {numberStatus === 'idle' && (
+                    <motion.div key="idle" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                      <span style={{ fontSize: 15, color: '#94A3B8', fontStyle: 'italic' }}>
+                        Select Type + Term + Year to generate Document Number
+                      </span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, backgroundColor: numberStatus === 'generated' ? 'rgba(255,255,255,0.6)' : '#F8FAFC', padding: '6px 12px', borderRadius: 10, border: '1px solid rgba(0,0,0,0.06)', backdropFilter: 'blur(4px)' }}>
+              <Info size={13} color="#64748B" />
+              <code style={{ fontSize: 11, color: '#2563EB', fontWeight: 700 }}>
+                [TYPE]-[TERM]-[YEAR]-[SEQ]
+              </code>
+            </div>
+          </div>
+
+          {/* Triad badge strip (shows when generated) */}
+          <AnimatePresence>
+            {numberStatus === 'generated' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                style={{ display: 'flex', gap: 8, paddingTop: 4 }}
+              >
+                {[
+                  { label: 'Type', value: selectedTypeName },
+                  { label: 'Term', value: selectedTermLabel },
+                  { label: 'Year', value: form.fiscalYear },
+                ].map((b) => (
+                  <span key={b.label} style={{ backgroundColor: 'rgba(255,255,255,0.7)', border: '1px solid #BFDBFE', color: '#1D4ED8', padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600 }}>
+                    {b.label}: <strong>{b.value}</strong>
+                  </span>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* ════════════════════════════════════
+            REQUIRED TRIAD — 3 dropdowns
+            ════════════════════════════════════ */}
+        <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', padding: '20px 24px', boxShadow: '0 1px 4px rgba(15,23,42,0.05)' }}>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 18 }}>
+            <Sparkles size={15} color="#2563EB" />
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#2563EB', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+              Required — These 3 fields generate the Document Number
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+            {/* Type */}
+            <div>
+              <Label required>Type</Label>
+              <select
+                value={form.documentTypeID}
+                onChange={(e) => patch({ documentTypeID: e.target.value ? Number(e.target.value) : '' })}
+                style={SELECT_STYLE(!!errors.documentTypeID)}
+              >
+                <option value="">Ordinance ▼</option>
+                {meta.types.map((t) => (
+                  <option key={t.DocumentTypeID} value={t.DocumentTypeID}>
+                    {t.TypeName}
+                  </option>
+                ))}
+              </select>
+              <FieldError msg={errors.documentTypeID} />
+            </div>
+
+            {/* Term */}
+            <div>
+              <Label required>Legislative Term</Label>
+              <select
+                value={form.legislativeTermID}
+                onChange={(e) => patch({ legislativeTermID: e.target.value ? Number(e.target.value) : '' })}
+                style={SELECT_STYLE(!!errors.legislativeTermID)}
+              >
+                <option value="">Select Term ▼</option>
+                {meta.terms.map((t) => (
+                  <option key={t.LegislativeTermID} value={t.LegislativeTermID}>
+                    {t.TermNumber.padStart(2, '0')} — {t.Description ?? `Term ${t.TermNumber}`}
+                  </option>
+                ))}
+              </select>
+              <FieldError msg={errors.legislativeTermID} />
+            </div>
+
+            {/* Year */}
+            <div>
+              <Label required>Year</Label>
+              <select
+                value={form.fiscalYear}
+                onChange={(e) => patch({ fiscalYear: e.target.value })}
+                style={SELECT_STYLE(!!errors.fiscalYear)}
+              >
+                <option value="">Select Year ▼</option>
+                {[2026, 2025, 2024, 2023, 2022, 2021, 2020].map((y) => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+              <FieldError msg={errors.fiscalYear} />
+            </div>
+          </div>
+        </div>
+
+        {/* ════════════════════════════════════
+            TITLE + SPONSOR
+            ════════════════════════════════════ */}
+        <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', padding: '20px 24px', boxShadow: '0 1px 4px rgba(15,23,42,0.05)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Title */}
+          <div>
+            <Label required>Title</Label>
+            <input
+              value={form.documentTitle}
+              onChange={(e) => patch({ documentTitle: e.target.value })}
+              placeholder="AN ORDINANCE AUTHORIZING THE SUPPLEMENTAL BUDGET OF THE CITY..."
+              style={{
+                width: '100%',
+                height: 46,
+                padding: '0 14px',
+                borderRadius: 12,
+                border: `1.5px solid ${errors.documentTitle ? '#EF4444' : '#CBD5E1'}`,
+                fontSize: 14,
+                fontWeight: 500,
+                color: '#0F172A',
+                outline: 'none',
+                fontFamily: 'Inter, system-ui, sans-serif',
+                boxSizing: 'border-box',
+              }}
+            />
+            <FieldError msg={errors.documentTitle} />
+          </div>
+
+          {/* Sponsor */}
+          <div>
+            <Label>Sponsor</Label>
+            <CouncilorCombobox
+              councilors={meta.councilors}
+              selectedID={form.primarySponsorID}
+              onSelect={(id) => patch({ primarySponsorID: id })}
+              placeholder="Search Councilor..."
+            />
+          </div>
+        </div>
+
+        {/* ════════════════════════════════════
+            COLLAPSIBLE: Legislative Session & Dates
+            ════════════════════════════════════ */}
+        <SectionCard
+          icon={<Calendar size={18} color="#16A34A" />}
+          iconBg="#F0FDF4"
+          title="Legislative Session & Dates"
+          subtitle="Session number, committee, dates filed and approved"
+          isOpen={openSections.legislative}
+          onToggle={() => toggleSection('legislative')}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, paddingTop: 16 }}>
+            <div>
+              <Label>Session Number</Label>
+              <input
+                value={form.sessionNumber}
+                onChange={(e) => patch({ sessionNumber: e.target.value })}
+                placeholder="e.g. Regular Session No. 14"
+                style={{ width: '100%', height: 46, padding: '0 14px', borderRadius: 12, border: '1.5px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div>
+              <Label>Committee Assignment</Label>
+              <input
+                value={form.committee}
+                onChange={(e) => patch({ committee: e.target.value })}
+                placeholder="e.g. Committee on Rules & Infrastructure"
+                style={{ width: '100%', height: 46, padding: '0 14px', borderRadius: 12, border: '1.5px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div>
+              <Label>Date Filed</Label>
+              <input
+                type="date"
+                value={form.dateFiled}
+                onChange={(e) => patch({ dateFiled: e.target.value })}
+                style={{ width: '100%', height: 46, padding: '0 14px', borderRadius: 12, border: '1.5px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', backgroundColor: '#FFFFFF' }}
+              />
+            </div>
+            <div>
+              <Label>Date Approved / Enacted</Label>
+              <input
+                type="date"
+                value={form.dateApproved}
+                onChange={(e) => patch({ dateApproved: e.target.value })}
+                style={{ width: '100%', height: 46, padding: '0 14px', borderRadius: 12, border: '1.5px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', backgroundColor: '#FFFFFF' }}
+              />
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ════════════════════════════════════
+            COLLAPSIBLE: Co-Sponsors
+            ════════════════════════════════════ */}
+        <SectionCard
+          icon={<Users size={18} color="#9333EA" />}
+          iconBg="#FAF5FF"
+          title="Co-Sponsors"
+          subtitle="Additional co-authoring councilors"
+          isOpen={openSections.sponsors}
+          onToggle={() => toggleSection('sponsors')}
+        >
+          <div style={{ paddingTop: 16 }}>
+            <Label>Co-Sponsors (hold Ctrl to select multiple)</Label>
+            <select
+              multiple
+              value={form.coSponsorIDs.map(String)}
+              onChange={(e) => {
+                const selected = Array.from(e.target.selectedOptions, (o) => Number(o.value));
+                patch({ coSponsorIDs: selected });
+              }}
+              style={{ width: '100%', height: 100, padding: 8, borderRadius: 12, border: '1.5px solid #CBD5E1', fontSize: 13, fontFamily: 'inherit', outline: 'none' }}
+            >
+              {meta.councilors.map((c) => (
+                <option key={c.CouncilorID} value={c.CouncilorID}>{c.FullName}</option>
+              ))}
+            </select>
+          </div>
+        </SectionCard>
+
+        {/* ════════════════════════════════════
+            COLLAPSIBLE: Attachments
+            ════════════════════════════════════ */}
+        <SectionCard
+          icon={<Paperclip size={18} color="#EA580C" />}
+          iconBg="#FFF7ED"
+          title="Attachments & Digital Files"
+          subtitle="PDF, DOCX, scanned documents (up to 50 MB)"
+          isOpen={openSections.attachments}
+          onToggle={() => toggleSection('attachments')}
+        >
+          <div style={{ paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <label style={{ border: '2px dashed #CBD5E1', borderRadius: 14, padding: '28px 24px', textAlign: 'center', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, backgroundColor: '#F8FAFC' }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Upload size={22} color="#2563EB" />
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>Click to upload or drag files here</span>
+              <span style={{ fontSize: 12, color: '#94A3B8' }}>PDF, DOCX, XLSX, Images</span>
+              <input type="file" multiple onChange={handleFileUpload} style={{ display: 'none' }} />
+            </label>
+
+            {form.attachments.map((att) => (
+              <div key={att.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, backgroundColor: '#F1F5F9', border: '1px solid #E2E8F0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <FileText size={16} color="#2563EB" />
+                  <div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', display: 'block' }}>{att.name}</span>
+                    <span style={{ fontSize: 11, color: '#64748B' }}>{(att.size / 1024).toFixed(1)} KB · {att.extension.toUpperCase()}</span>
+                  </div>
+                </div>
+                <button onClick={() => patch({ attachments: form.attachments.filter((a) => a.id !== att.id) })} type="button" style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 4 }}>
+                  <X size={15} color="#94A3B8" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
+        {/* ════════════════════════════════════
+            COLLAPSIBLE: Remarks / Keywords
+            ════════════════════════════════════ */}
+        <SectionCard
+          icon={<Tag size={18} color="#0891B2" />}
+          iconBg="#ECFEFF"
+          title="Remarks & Search Tags"
+          subtitle="Additional notes and subject keywords"
+          isOpen={openSections.remarks}
+          onToggle={() => toggleSection('remarks')}
+        >
+          <div style={{ paddingTop: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <Label>Remarks / Notes</Label>
+              <textarea
+                value={form.remarks}
+                onChange={(e) => patch({ remarks: e.target.value })}
+                rows={3}
+                placeholder="Additional notes or internal remarks about this document..."
+                style={{ width: '100%', padding: '12px 14px', borderRadius: 12, border: '1.5px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+              />
+            </div>
+
+            <div>
+              <Label>Search Keywords</Label>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                <input
+                  value={newKw}
+                  onChange={(e) => setNewKw(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addKeyword())}
+                  placeholder="Type a keyword and press Enter..."
+                  style={{ flex: 1, height: 40, padding: '0 12px', borderRadius: 10, border: '1.5px solid #CBD5E1', fontSize: 13, outline: 'none', fontFamily: 'inherit' }}
+                />
+                <button onClick={addKeyword} type="button" style={{ padding: '0 16px', borderRadius: 10, border: 'none', backgroundColor: '#EFF6FF', color: '#2563EB', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                  + Add
+                </button>
+              </div>
+              {form.keywords.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {form.keywords.map((kw) => (
+                    <span key={kw} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB', padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600 }}>
+                      {kw}
+                      <X size={11} style={{ cursor: 'pointer' }} onClick={() => patch({ keywords: form.keywords.filter((k) => k !== kw) })} />
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ── Footer ── */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4, paddingBottom: 8 }}>
+          <button
+            onClick={() => handleSave(true)}
+            disabled={isSubmitting}
+            type="button"
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 22px', borderRadius: 12, border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#374151', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+          >
+            <Save size={16} /> Save as Draft
+          </button>
+          <button
+            onClick={() => handleSave(false)}
+            disabled={isSubmitting}
+            type="button"
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '11px 24px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg, #2563EB, #1D4ED8)', color: '#FFFFFF', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 16px rgba(37,99,235,0.3)' }}
           >
             <Send size={16} /> Publish Document
           </button>
         </div>
-      </div>
-
-      {/* Notification Banner */}
-      <AnimatePresence>
-        {notification && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            style={{
-              padding: '12px 16px',
-              borderRadius: 12,
-              marginBottom: 16,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              backgroundColor: notification.type === 'success' ? '#F0FDF4' : '#FEF2F2',
-              border: `1px solid ${notification.type === 'success' ? '#BBF7D0' : '#FCA5A5'}`,
-              color: notification.type === 'success' ? '#166534' : '#991B1B',
-              fontSize: 14,
-              fontWeight: 500,
-            }}
-          >
-            {notification.type === 'success' ? <CheckCircle size={18} /> : <AlertCircle size={18} />}
-            {notification.message}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ─────────────────────────────────────────────────────────────────────────────
-          HIGHLIGHTED TOP CARD: AUTOMATICALLY GENERATED DOCUMENT NUMBER PREVIEW
-         ───────────────────────────────────────────────────────────────────────────── */}
-      <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', padding: 20, marginBottom: 20, boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: numberStatus === 'generated' ? '#EFF6FF' : '#F8FAFC', borderWidth: 1, borderColor: numberStatus === 'generated' ? '#BFDBFE' : '#E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Hash size={22} color={numberStatus === 'generated' ? '#2563EB' : '#94A3B8'} />
-          </div>
-          <div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.5px', textTransform: 'uppercase', display: 'block', marginBottom: 2 }}>
-              Document Number
-            </span>
-
-            <AnimatePresence mode="wait">
-              {numberStatus === 'generating' ? (
-                <motion.div
-                  key="generating"
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.15 }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
-                >
-                  <RefreshCw size={16} color="#2563EB" style={{ animation: 'spin 1s linear infinite' }} />
-                  <span style={{ fontSize: 18, fontWeight: 700, color: '#2563EB', fontStyle: 'italic' }}>
-                    Generating sequence...
-                  </span>
-                </motion.div>
-              ) : numberStatus === 'generated' ? (
-                <motion.div
-                  key="generated"
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.96 }}
-                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10 }}
-                >
-                  <span style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px' }}>
-                    {form.documentNumber}
-                  </span>
-                  <span style={{ backgroundColor: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Check size={12} /> Automatically Generated
-                  </span>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="idle"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                >
-                  <span style={{ fontSize: 14, fontWeight: 500, color: '#94A3B8', fontStyle: 'italic' }}>
-                    Waiting for required information... (Select Type + Term + Year below)
-                  </span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#F8FAFC', padding: '6px 12px', borderRadius: 10, border: '1px solid #E2E8F0' }}>
-          <Info size={14} color="#64748B" />
-          <span style={{ fontSize: 12, color: '#64748B', fontWeight: 500 }}>
-            Format: <code style={{ color: '#2563EB', fontWeight: 700 }}>[PREFIX]-[TERM]-[YEAR]-[SEQUENCE]</code>
-          </span>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-        {/* SECTION 1: Document Information & Required Triad */}
-        <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
-          <button
-            onClick={() => toggleSection('docInfo')}
-            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', backgroundColor: '#FFFFFF', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <FileText size={18} color="#2563EB" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 1: Document Type, Legislative Term & Year</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Select the 3 required fields to generate the Document Number</p>
-              </div>
-            </div>
-            {openSections.docInfo ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
-          </button>
-
-          {openSections.docInfo && (
-            <div style={{ padding: '0 20px 20px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 16 }}>
-              
-              {/* STEP 1, 2, 3: REQUIRED TRIAD ROW */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, backgroundColor: '#F8FAFC', padding: 16, borderRadius: 12, border: '1px solid #E2E8F0' }}>
-                
-                {/* STEP 1: Document Type */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>
-                    ① Document Type <span style={{ color: '#EF4444' }}>*</span>
-                  </label>
-                  <select
-                    value={form.documentTypeID}
-                    onChange={(e) => setForm({ ...form, documentTypeID: e.target.value ? Number(e.target.value) : '' })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: errors.documentTypeID ? '1px solid #EF4444' : '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
-                  >
-                    <option value="">-- Select Type --</option>
-                    {meta.types.map((t) => (
-                      <option key={t.DocumentTypeID} value={t.DocumentTypeID}>{t.TypeName} ({t.Code})</option>
-                    ))}
-                  </select>
-                  {errors.documentTypeID && <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{errors.documentTypeID}</span>}
-                </div>
-
-                {/* STEP 2: Legislative Term */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>
-                    ② Legislative Term <span style={{ color: '#EF4444' }}>*</span>
-                  </label>
-                  <select
-                    value={form.legislativeTermID}
-                    onChange={(e) => setForm({ ...form, legislativeTermID: e.target.value ? Number(e.target.value) : '' })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: errors.legislativeTermID ? '1px solid #EF4444' : '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
-                  >
-                    <option value="">-- Select Term --</option>
-                    {meta.terms.map((t) => (
-                      <option key={t.LegislativeTermID} value={t.LegislativeTermID}>Term {t.TermNumber.padStart(2, '0')} ({t.Description || t.TermNumber})</option>
-                    ))}
-                  </select>
-                  {errors.legislativeTermID && <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{errors.legislativeTermID}</span>}
-                </div>
-
-                {/* STEP 3: Year */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>
-                    ③ Year <span style={{ color: '#EF4444' }}>*</span>
-                  </label>
-                  <select
-                    value={form.fiscalYear}
-                    onChange={(e) => setForm({ ...form, fiscalYear: e.target.value })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: errors.fiscalYear ? '1px solid #EF4444' : '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
-                  >
-                    <option value="">-- Select Year --</option>
-                    <option value="2026">2026</option>
-                    <option value="2025">2025</option>
-                    <option value="2024">2024</option>
-                    <option value="2023">2023</option>
-                    <option value="2022">2022</option>
-                  </select>
-                  {errors.fiscalYear && <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{errors.fiscalYear}</span>}
-                </div>
-              </div>
-
-              {/* SECONDARY ATTRIBUTES ROW */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Priority</label>
-                  <select
-                    value={form.priority}
-                    onChange={(e) => setForm({ ...form, priority: e.target.value as any })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
-                  >
-                    <option value="Normal">Normal</option>
-                    <option value="High">High</option>
-                    <option value="Urgent">Urgent</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Confidentiality Level</label>
-                  <select
-                    value={form.confidentiality}
-                    onChange={(e) => setForm({ ...form, confidentiality: e.target.value as any })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
-                  >
-                    <option value="Public">Public (Open Record)</option>
-                    <option value="Internal">Internal (Executive Use)</option>
-                    <option value="Confidential">Confidential (Restricted Access)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Status</label>
-                  <select
-                    value={form.statusID}
-                    onChange={(e) => setForm({ ...form, statusID: Number(e.target.value) })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
-                  >
-                    {meta.statuses.map((s) => (
-                      <option key={s.StatusID} value={s.StatusID}>{s.StatusName}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* STEP 5: Title */}
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>
-                  Document Title <span style={{ color: '#EF4444' }}>*</span>
-                </label>
-                <input
-                  value={form.documentTitle}
-                  onChange={(e) => setForm({ ...form, documentTitle: e.target.value })}
-                  placeholder="e.g. AN ORDINANCE AUTHORIZING THE SUPPLEMENTAL BUDGET OF THE CITY..."
-                  style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: errors.documentTitle ? '1px solid #EF4444' : '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none' }}
-                />
-                {errors.documentTitle && <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{errors.documentTitle}</span>}
-              </div>
-
-              {/* Summary */}
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Short Description / Abstract Summary</label>
-                <textarea
-                  value={form.summary}
-                  onChange={(e) => setForm({ ...form, summary: e.target.value })}
-                  rows={3}
-                  placeholder="Enter a brief abstract summary of the legislative document's intent..."
-                  style={{ width: '100%', padding: 12, borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }}
-                />
-              </div>
-
-              {/* Search Keywords */}
-              <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Subject Keywords & Tags</label>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <input
-                    value={newKeywordInput}
-                    onChange={(e) => setNewKeywordInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addKeyword())}
-                    placeholder="Add search tag and press Enter..."
-                    style={{ flex: 1, height: 38, padding: '0 12px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 13, outline: 'none' }}
-                  />
-                  <button onClick={addKeyword} type="button" style={{ padding: '0 16px', borderRadius: 8, border: 'none', backgroundColor: '#F1F5F9', color: '#334155', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-                    + Add Tag
-                  </button>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {form.keywords.map((kw) => (
-                    <span key={kw} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, backgroundColor: '#EFF6FF', border: '1px solid #BFDBFE', color: '#2563EB', padding: '4px 10px', borderRadius: 16, fontSize: 12, fontWeight: 600 }}>
-                      {kw}
-                      <X size={12} style={{ cursor: 'pointer' }} onClick={() => removeKeyword(kw)} />
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* SECTION 2: Legislative Details */}
-        <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
-          <button
-            onClick={() => toggleSection('legislative')}
-            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', backgroundColor: '#FFFFFF', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#F0FDF4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Calendar size={18} color="#16A34A" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 2: Legislative Session & Dates</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Committee assignment, date filed, enacted dates</p>
-              </div>
-            </div>
-            {openSections.legislative ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
-          </button>
-
-          {openSections.legislative && (
-            <div style={{ padding: '0 20px 20px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 16 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Council Session Number</label>
-                  <input
-                    value={form.sessionNumber}
-                    onChange={(e) => setForm({ ...form, sessionNumber: e.target.value })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Committee Assignment</label>
-                  <input
-                    value={form.committee}
-                    onChange={(e) => setForm({ ...form, committee: e.target.value })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Date Filed</label>
-                  <input
-                    type="date"
-                    value={form.dateFiled}
-                    onChange={(e) => setForm({ ...form, dateFiled: e.target.value })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', backgroundColor: '#FFFFFF' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Date Approved / Enacted</label>
-                  <input
-                    type="date"
-                    value={form.dateApproved}
-                    onChange={(e) => setForm({ ...form, dateApproved: e.target.value })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', backgroundColor: '#FFFFFF' }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* SECTION 3: Authors / Sponsors */}
-        <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
-          <button
-            onClick={() => toggleSection('authors')}
-            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', backgroundColor: '#FFFFFF', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#FAF5FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Users size={18} color="#9333EA" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 3: Authors & Sponsors</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Primary author and co-sponsors</p>
-              </div>
-            </div>
-            {openSections.authors ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
-          </button>
-
-          {openSections.authors && (
-            <div style={{ padding: '0 20px 20px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 16 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Primary Author / Authoring Sponsor</label>
-                  <select
-                    value={form.primarySponsorID || ''}
-                    onChange={(e) => setForm({ ...form, primarySponsorID: Number(e.target.value) })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', backgroundColor: '#FFFFFF' }}
-                  >
-                    {meta.councilors.map((c) => (
-                      <option key={c.CouncilorID} value={c.CouncilorID}>{c.FullName}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Co-Sponsors</label>
-                  <select
-                    multiple
-                    value={form.coSponsorIDs.map(String)}
-                    onChange={(e) => {
-                      const selected = Array.from(e.target.selectedOptions, (opt) => Number(opt.value));
-                      setForm({ ...form, coSponsorIDs: selected });
-                    }}
-                    style={{ width: '100%', height: 72, padding: 8, borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 13, outline: 'none', backgroundColor: '#FFFFFF' }}
-                  >
-                    {meta.councilors.map((c) => (
-                      <option key={c.CouncilorID} value={c.CouncilorID}>{c.FullName}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* SECTION 4: Attachments */}
-        <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
-          <button
-            onClick={() => toggleSection('attachments')}
-            style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', backgroundColor: '#FFFFFF', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: '#FFF7ED', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Paperclip size={18} color="#EA580C" />
-              </div>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 4: Attachments & Digital Files</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Drag and drop PDF, DOCX, Scans</p>
-              </div>
-            </div>
-            {openSections.attachments ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
-          </button>
-
-          {openSections.attachments && (
-            <div style={{ padding: '0 20px 20px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 16 }}>
-              <label style={{ border: '2px dashed #CBD5E1', borderRadius: 12, padding: 24, textAlign: 'center', backgroundColor: '#F8FAFC', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                <Upload size={28} color="#2563EB" />
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>Click to upload or drag files here</span>
-                <span style={{ fontSize: 12, color: '#64748B' }}>Supports PDF, DOCX, XLSX, Scanned Images (Up to 50MB)</span>
-                <input type="file" multiple onChange={handleFileUpload} style={{ display: 'none' }} />
-              </label>
-
-              {form.attachments.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {form.attachments.map((att) => (
-                    <div key={att.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderRadius: 10, backgroundColor: '#F1F5F9', border: '1px solid #E2E8F0' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <FileText size={18} color="#2563EB" />
-                        <div>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', display: 'block' }}>{att.name}</span>
-                          <span style={{ fontSize: 11, color: '#64748B' }}>{(att.size / 1024).toFixed(1)} KB • {att.extension.toUpperCase()}</span>
-                        </div>
-                      </div>
-                      <X size={16} color="#94A3B8" style={{ cursor: 'pointer' }} onClick={() => removeAttachment(att.id)} />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* SECTION 5: Footer Info */}
-        <div style={{ padding: '14px 20px', borderRadius: 12, backgroundColor: '#F1F5F9', border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#64748B' }}>
-          <span>Created By: <strong>Admin User (Juan Dela Cruz)</strong></span>
-          <span>Version: <strong>CLINDEX 2.0 Enterprise v2.5</strong></span>
-          <span>Status: <strong>{form.isDraft ? 'Draft Mode' : 'Published'}</strong></span>
-        </div>
 
       </div>
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 };
