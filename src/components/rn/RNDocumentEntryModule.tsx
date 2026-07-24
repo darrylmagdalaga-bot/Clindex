@@ -31,7 +31,7 @@ interface StatusItem { StatusID: number; StatusName: string; Color?: string; }
 interface FormState {
   documentNumber: string;
   documentTypeID: number | '';
-  legislativeTermID: number | '';
+  legislativeTermID: string;
   fiscalYear: string;
   documentTitle: string;
   summary: string;
@@ -191,22 +191,20 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
   const numDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ── Local fallback number builder ── */
-  const buildLocalNumber = useCallback((typeId: number, termId: number, year: string): string => {
+  const buildLocalNumber = useCallback((typeId: number, termInput: string, year: string): string => {
     const typeObj = docTypes.find(t => t.DocumentTypeID === typeId);
     const prefix  = typeObj?.Code ?? 'DOC';
-    const termObj = legTerms.find(t => t.LegislativeTermID === termId);
-    const termDigits = termObj ? (termObj.TermNumber.match(/\d+/) || ['01'])[0] : String(termId);
+    const termDigits = (termInput.match(/\d+/) || ['01'])[0];
     const term    = String(termDigits).padStart(2, '0');
     return `${prefix}-${term}-${year}-001`;
-  }, [docTypes, legTerms]);
+  }, [docTypes]);
 
   /* ── Fetch next document number ── */
-  const fetchNextNumber = useCallback(async (typeId: number, termId: number, year: string) => {
+  const fetchNextNumber = useCallback(async (typeId: number, termInput: string, year: string) => {
     setNumStatus('generating');
     patch({ documentNumber: '' });
 
-    const termObj    = legTerms.find(t => t.LegislativeTermID === termId);
-    const termDigits = termObj ? (termObj.TermNumber.match(/\d+/) || ['01'])[0] : String(termId);
+    const termDigits = (termInput.match(/\d+/) || ['01'])[0];
     const termCode   = String(termDigits).padStart(2, '0');
 
     try {
@@ -216,14 +214,14 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
       if (data.success && data.documentNumber) {
         patch({ documentNumber: data.documentNumber });
       } else {
-        patch({ documentNumber: buildLocalNumber(typeId, termId, year) });
+        patch({ documentNumber: buildLocalNumber(typeId, termInput, year) });
       }
     } catch {
-      patch({ documentNumber: buildLocalNumber(typeId, termId, year) });
+      patch({ documentNumber: buildLocalNumber(typeId, termInput, year) });
     } finally {
       setNumStatus('generated');
     }
-  }, [legTerms, buildLocalNumber]);
+  }, [buildLocalNumber]);
 
   /* ── Fetch existing document in Edit Mode ── */
   useEffect(() => {
@@ -244,10 +242,12 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
             extension: a.FileExtension,
           })) || [];
 
+          const termNumDigits = d.TermNumber ? (d.TermNumber.match(/\d+/) || ['01'])[0].padStart(2, '0') : String(d.LegislativeTermID || '01').padStart(2, '0');
+
           setForm({
             documentNumber: d.DocumentCode || d.DocumentNumber,
             documentTypeID: d.DocumentTypeID || '',
-            legislativeTermID: d.LegislativeTermID || '',
+            legislativeTermID: termNumDigits,
             fiscalYear: String(d.DocumentYear || new Date().getFullYear()),
             documentTitle: d.DocumentTitle || '',
             summary: d.Summary || '',
@@ -282,7 +282,7 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
       numDebounce.current = setTimeout(() => {
         fetchNextNumber(
           Number(form.documentTypeID),
-          Number(form.legislativeTermID),
+          String(form.legislativeTermID),
           form.fiscalYear
         );
       }, 250);
@@ -430,22 +430,26 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
               <FieldError msg={errors.documentTypeID} />
             </div>
 
-            {/* Legislative Term — from Cloud_LegislativeTerms */}
+            {/* Legislative Term — Numeric Textbox (e.g., 06, 50) */}
             <div>
               <Label required>Legislative Term</Label>
-              {loadingMeta ? <SelectSkeleton /> : (
-                <select value={form.legislativeTermID} onChange={e => patch({ legislativeTermID: e.target.value ? Number(e.target.value) : '' })} style={selectBase(!!errors.legislativeTermID)}>
-                  <option value="">Select Term</option>
-                  {legTerms.map(t => {
-                    const num = (t.TermNumber.match(/\d+/) || ['01'])[0].padStart(2, '0');
-                    return (
-                      <option key={t.LegislativeTermID} value={t.LegislativeTermID}>
-                        Term {num} ({t.TermNumber})
-                      </option>
-                    );
-                  })}
-                </select>
-              )}
+              <input
+                type="text"
+                maxLength={4}
+                value={form.legislativeTermID}
+                onChange={e => {
+                  const raw = e.target.value.replace(/\D/g, ''); // Digits only
+                  patch({ legislativeTermID: raw });
+                }}
+                onBlur={() => {
+                  if (form.legislativeTermID) {
+                    const formatted = String(form.legislativeTermID).padStart(2, '0');
+                    patch({ legislativeTermID: formatted });
+                  }
+                }}
+                placeholder="e.g. 06, 50"
+                style={inputBase(!!errors.legislativeTermID)}
+              />
               <FieldError msg={errors.legislativeTermID} />
             </div>
 
