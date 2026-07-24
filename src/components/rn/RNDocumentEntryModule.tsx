@@ -141,6 +141,7 @@ const CollapsibleSection: React.FC<{
 interface RNDocumentEntryModuleProps {
   editDocumentID?: number | null;
   onSaveSuccess?: () => void;
+  onCancel?: () => void; // Called when user cancels in edit mode
 }
 
 /* ══════════════════════════════════════════════
@@ -149,6 +150,7 @@ interface RNDocumentEntryModuleProps {
 export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
   editDocumentID,
   onSaveSuccess,
+  onCancel,
 }) => {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const patch = (p: Partial<FormState>) => setForm(prev => ({ ...prev, ...p }));
@@ -336,7 +338,7 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
 
     setIsSubmitting(true);
     try {
-      const url = isEditMode ? `${API_BASE}/documents/${editDocumentID}` : `${API_BASE}/documents/entry`;
+      const url    = isEditMode ? `${API_BASE}/documents/${editDocumentID}` : `${API_BASE}/documents/entry`;
       const method = isEditMode ? 'PUT' : 'POST';
 
       const res  = await fetch(url, {
@@ -346,15 +348,23 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
       });
       const data = await res.json();
       setIsSubmitting(false);
+
       if (data.success) {
-        setNotification({
-          type: 'success',
-          msg: isEditMode
-            ? `Document ${data.documentCode} updated successfully.`
-            : (isDraft ? `Draft saved — ${data.documentCode}` : `Document published — ${data.documentCode}`)
-        });
-        if (onSaveSuccess) onSaveSuccess();
-        if (!isEditMode && !isDraft) setForm(INITIAL_FORM);
+        const successMsg = isEditMode
+          ? `✓ ${data.documentCode || form.documentNumber} updated successfully.`
+          : (isDraft
+              ? `Draft saved — ${data.documentCode}`
+              : `Document published — ${data.documentCode}`);
+
+        setNotification({ type: 'success', msg: successMsg });
+
+        if (isEditMode) {
+          // Delay navigation so user reads the success message
+          setTimeout(() => { if (onSaveSuccess) onSaveSuccess(); }, 1800);
+        } else {
+          if (onSaveSuccess) onSaveSuccess();
+          if (!isDraft) setForm(INITIAL_FORM);
+        }
       } else {
         setNotification({ type: 'error', msg: data.message || 'Failed to save document.' });
       }
@@ -369,19 +379,51 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#F8FAFC', overflowY: 'auto', fontFamily: 'Inter, system-ui, -apple-system, sans-serif' }}>
 
       {/* ── Sticky header ── */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: 'rgba(248,250,252,0.92)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #E8EDF2', padding: '13px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, backgroundColor: 'rgba(248,250,252,0.95)', backdropFilter: 'blur(12px)', borderBottom: '1px solid #E8EDF2', padding: '13px 28px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>New Legislative Document</h1>
-          <p style={{ margin: 0, fontSize: 11, color: '#94A3B8', marginTop: 2 }}>Ctrl+S · Save Draft &nbsp;·&nbsp; Ctrl+Enter · Publish</p>
+          {isEditMode ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 800, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.6px', backgroundColor: '#FEF3C7', padding: '2px 8px', borderRadius: 6, border: '1px solid #FDE68A' }}>Edit Mode</span>
+                <h1 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>
+                  {form.documentNumber || 'Loading document…'}
+                </h1>
+              </div>
+              <p style={{ margin: 0, fontSize: 11, color: '#94A3B8' }}>Ctrl+S · Save Changes &nbsp;·&nbsp; Ctrl+Enter · Save &amp; Return</p>
+            </>
+          ) : (
+            <>
+              <h1 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#0F172A', lineHeight: 1.2 }}>New Legislative Document</h1>
+              <p style={{ margin: 0, fontSize: 11, color: '#94A3B8', marginTop: 2 }}>Ctrl+S · Save Draft &nbsp;·&nbsp; Ctrl+Enter · Publish</p>
+            </>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={() => handleSave(true)} disabled={isSubmitting}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#374151', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-            <Save size={14} /> Save Draft
-          </button>
-          <button type="button" onClick={() => handleSave(false)} disabled={isSubmitting}
-            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#2563EB,#1D4ED8)', color: '#FFF', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(37,99,235,0.28)' }}>
-            <Send size={14} /> Publish Document
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+          {/* Cancel — only in edit mode */}
+          {isEditMode && (
+            <button type="button" onClick={onCancel} disabled={isSubmitting}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 16px', borderRadius: 9, border: '1.5px solid #E2E8F0', backgroundColor: '#FFFFFF', color: '#64748B', fontSize: 13, fontWeight: 600, cursor: isSubmitting ? 'default' : 'pointer', opacity: isSubmitting ? 0.5 : 1 }}>
+              ← Cancel
+            </button>
+          )}
+
+          {!isEditMode && (
+            <button type="button" onClick={() => handleSave(true)} disabled={isSubmitting}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, border: '1.5px solid #CBD5E1', backgroundColor: '#FFFFFF', color: '#374151', fontSize: 13, fontWeight: 600, cursor: isSubmitting ? 'default' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
+              <Save size={14} /> Save Draft
+            </button>
+          )}
+
+          <button type="button" onClick={() => handleSave(isEditMode ? false : false)} disabled={isSubmitting}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 9, border: 'none', background: isSubmitting ? '#93C5FD' : 'linear-gradient(135deg,#2563EB,#1D4ED8)', color: '#FFF', fontSize: 13, fontWeight: 700, cursor: isSubmitting ? 'default' : 'pointer', boxShadow: isSubmitting ? 'none' : '0 3px 10px rgba(37,99,235,0.28)', minWidth: 160, justifyContent: 'center', transition: 'all 200ms' }}>
+            {isSubmitting ? (
+              <><Loader2 size={14} style={{ animation: 'spin 0.8s linear infinite' }} /> {isEditMode ? 'Saving Changes…' : 'Saving…'}</>
+            ) : (
+              isEditMode
+                ? <><Save size={14} /> Save Changes</>
+                : <><Send size={14} /> Publish Document</>
+            )}
           </button>
         </div>
       </div>

@@ -53,7 +53,8 @@ function deriveRole(roleName: string): PersistedSession['role'] {
   }
 }
 
-import { RNLegislativeRecords } from '@/components/rn/RNLegislativeRecords';
+import { RNLegislativeRecords, RecordsSnapshot } from '@/components/rn/RNLegislativeRecords';
+
 
 export function RNAppLayout() {
   /* ── auth state ── */
@@ -66,6 +67,7 @@ export function RNAppLayout() {
   const [activeTab, setActiveTab]                     = useState('dashboard');
   const [isCollapsed, setIsCollapsed]                 = useState(false);
   const [editingDocID, setEditingDocID]               = useState<number | null>(null);
+  const [recordsSnapshot, setRecordsSnapshot]         = useState<RecordsSnapshot | null>(null);
 
   /* ── bootstrap: restore session on mount (prevents login flash) ── */
   const [sessionChecked, setSessionChecked]           = useState(false);
@@ -224,9 +226,18 @@ export function RNAppLayout() {
                   <RNDocumentEntryModule
                     editDocumentID={editingDocID}
                     onSaveSuccess={() => {
+                      const wasEditing = Boolean(editingDocID);
                       setEditingDocID(null);
+                      if (wasEditing) {
+                        // Return to records — snapshot will restore exact position
+                        setActiveTab('records');
+                      }
+                      // On new-document save, stay on create tab (form resets itself)
+                    }}
+                    onCancel={() => {
+                      // Cancel in edit mode → return to records with snapshot
                       if (editingDocID) {
-                        // When saving an edit, navigate back to Records so user sees the updated record
+                        setEditingDocID(null);
                         setActiveTab('records');
                       }
                     }}
@@ -234,11 +245,14 @@ export function RNAppLayout() {
                 ) : activeTab === 'records' ? (
                   <RNLegislativeRecords
                     userRole={userRole}
-                    onEditDocument={(docID) => {
+                    initialSnapshot={recordsSnapshot}
+                    onEditDocument={(docID, snapshot) => {
+                      setRecordsSnapshot(snapshot);
                       setEditingDocID(docID);
                       setActiveTab('create');
                     }}
                     onCreateDocument={() => {
+                      setRecordsSnapshot(null);  // no snapshot needed for new docs
                       setEditingDocID(null);
                       setActiveTab('create');
                     }}
