@@ -154,6 +154,36 @@ export async function createDocumentEndpoints(app) {
   });
 
   /* ══════════════════════════════════════════════════════════
+     GET /api/document-statuses
+     Source: Cloud_DocumentStatus
+     ══════════════════════════════════════════════════════════ */
+  app.get('/api/document-statuses', async (req, res) => {
+    try {
+      const pool = await getDbPool();
+      const result = await pool.request().query(`
+        SELECT StatusID, StatusName, Color, DisplayOrder
+        FROM Cloud_DocumentStatus
+        WHERE IsActive = 1
+        ORDER BY DisplayOrder ASC
+      `);
+      res.json({ success: true, data: result.recordset });
+    } catch (err) {
+      console.error('[/api/document-statuses]', err.message);
+      // Fallback static statuses
+      res.json({
+        success: true,
+        data: [
+          { StatusID: 1, StatusName: 'Draft',          Color: '#94A3B8' },
+          { StatusID: 2, StatusName: 'Pending Review', Color: '#F59E0B' },
+          { StatusID: 3, StatusName: 'Approved',       Color: '#22C55E' },
+          { StatusID: 4, StatusName: 'Enacted',        Color: '#2563EB' },
+          { StatusID: 5, StatusName: 'Archived',       Color: '#6B7280' },
+        ],
+      });
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════
      GET /api/documents/next-number
      Smart sequence generator — prefix sourced from DB
      ══════════════════════════════════════════════════════════ */
@@ -260,6 +290,7 @@ export async function createDocumentEndpoints(app) {
         request.input('search', mssql.NVarChar, `%${search}%`);
         whereClauses.push(`(
           d.DocumentCode LIKE @search OR
+          d.DocumentNumber LIKE @search OR
           d.DocumentTitle LIKE @search OR
           d.Keywords LIKE @search OR
           d.Remarks LIKE @search OR
@@ -375,11 +406,15 @@ export async function createDocumentEndpoints(app) {
       if (isNaN(docID)) return res.status(400).json({ success: false, message: 'Invalid document ID.' });
 
       const pool = await getDbPool();
-      const request = pool.request();
-      request.input('DocumentID', mssql.Int, docID);
+
+      // ── CRITICAL FIX: use SEPARATE request objects for each parallel query ──
+      // mssql does NOT support reusing one request object across concurrent .query() calls
+      const docReq      = pool.request().input('DocumentID', mssql.Int, docID);
+      const sponsorsReq = pool.request().input('DocumentID', mssql.Int, docID);
+      const attReq      = pool.request().input('DocumentID', mssql.Int, docID);
 
       const [docRes, sponsorsRes, attRes] = await Promise.all([
-        request.query(`
+        docReq.query(`
           SELECT d.*, t.TypeName, t.Code AS TypeCode, st.StatusName, st.Color AS StatusColor,
                  lt.TermNumber, lt.Description AS TermDescription
           FROM Cloud_Documents d
@@ -388,16 +423,18 @@ export async function createDocumentEndpoints(app) {
           LEFT JOIN Cloud_LegislativeTerms lt ON d.LegislativeTermID = lt.LegislativeTermID
           WHERE d.DocumentID = @DocumentID AND d.IsDeleted = 0
         `),
-        request.query(`
+        sponsorsReq.query(`
           SELECT s.DocumentSponsorID, s.CouncilorID, s.SponsorType, c.FullName, c.Title, c.PositionID
           FROM Cloud_DocumentSponsors s
           JOIN Cloud_Councilors c ON s.CouncilorID = c.CouncilorID
           WHERE s.DocumentID = @DocumentID
+          ORDER BY CASE WHEN s.SponsorType = 'Primary' THEN 0 ELSE 1 END
         `),
-        request.query(`
+        attReq.query(`
           SELECT AttachmentID, OriginalFileName, StoredFileName, FilePath, FileExtension, FileSize, MimeType, UploadedDate
           FROM Cloud_DocumentAttachments
           WHERE DocumentID = @DocumentID
+          ORDER BY UploadedDate DESC
         `),
       ]);
 
@@ -406,19 +443,16 @@ export async function createDocumentEndpoints(app) {
         return res.status(404).json({ success: false, message: 'Document not found.' });
       }
 
-      // Log VIEW_DOCUMENT audit
-      try {
-        const auditReq = pool.request();
-        auditReq.input('Action', mssql.NVarChar(100), 'VIEW_DOCUMENT');
-        auditReq.input('TableName', mssql.NVarChar(100), 'Cloud_Documents');
-        auditReq.input('RecordID', mssql.NVarChar(50), String(docID));
-        auditReq.input('IPAddress', mssql.NVarChar(45), req.ip || '127.0.0.1');
-        auditReq.input('Browser', mssql.NVarChar(255), req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 255) : 'Unknown');
-        await auditReq.query(`
-          INSERT INTO Cloud_AuditLogs (Action, TableName, RecordID, IPAddress, Browser, CreatedDate)
-          VALUES (@Action, @TableName, @RecordID, @IPAddress, @Browser, GETDATE())
-        `);
-      } catch (_) {}
+      // Log VIEW_DOCUMENT audit (non-blocking)
+      pool.request()
+        .input('Action',    mssql.NVarChar(100), 'VIEW_DOCUMENT')
+        .input('TableName', mssql.NVarChar(100), 'Cloud_Documents')
+        .input('RecordID',  mssql.NVarChar(50),  String(docID))
+        .input('IPAddress', mssql.NVarChar(45),  req.ip || '127.0.0.1')
+        .input('Browser',   mssql.NVarChar(255), req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 255) : 'Unknown')
+        .query(`INSERT INTO Cloud_AuditLogs (Action, TableName, RecordID, IPAddress, Browser, CreatedDate)
+                VALUES (@Action, @TableName, @RecordID, @IPAddress, @Browser, GETDATE())`) 
+        .catch(() => {}); // fire-and-forget
 
       res.json({
         success: true,

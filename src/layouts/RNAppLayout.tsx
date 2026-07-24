@@ -223,7 +223,13 @@ export function RNAppLayout() {
                 ) : activeTab === 'create' ? (
                   <RNDocumentEntryModule
                     editDocumentID={editingDocID}
-                    onSaveSuccess={() => { setEditingDocID(null); }}
+                    onSaveSuccess={() => {
+                      setEditingDocID(null);
+                      if (editingDocID) {
+                        // When saving an edit, navigate back to Records so user sees the updated record
+                        setActiveTab('records');
+                      }
+                    }}
                   />
                 ) : activeTab === 'records' ? (
                   <RNLegislativeRecords
