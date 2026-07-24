@@ -100,6 +100,7 @@ export function RNAppLayout() {
     switch (tab) {
       case 'dashboard': return 'Dashboard';
       case 'create':    return 'New Legislative Document';
+      case 'edit':      return 'Edit Legislative Document';
       case 'records':   return 'Records Repository';
       case 'reports':   return 'Reports & Analytics';
       case 'settings':  return 'System Settings';
@@ -222,41 +223,49 @@ export function RNAppLayout() {
               >
                 {activeTab === 'developer' ? (
                   <RNDeveloperConsole userRole={userRole} />
+
                 ) : activeTab === 'create' ? (
+                  /* ── NEW DOCUMENT — always a fresh blank form ── */
+                  <RNDocumentEntryModule
+                    editDocumentID={null}
+                    onSaveSuccess={() => {
+                      // After publishing a new doc, stay on create tab (form already resets itself)
+                    }}
+                    onCancel={undefined}
+                  />
+
+                ) : activeTab === 'edit' ? (
+                  /* ── EDIT DOCUMENT — completely separate module/page ── */
                   <RNDocumentEntryModule
                     editDocumentID={editingDocID}
                     onSaveSuccess={() => {
-                      const wasEditing = Boolean(editingDocID);
+                      // 1.8 s delay fires inside the module so user sees ✓ message
                       setEditingDocID(null);
-                      if (wasEditing) {
-                        // Return to records — snapshot will restore exact position
-                        setActiveTab('records');
-                      }
-                      // On new-document save, stay on create tab (form resets itself)
+                      setActiveTab('records');
                     }}
                     onCancel={() => {
-                      // Cancel in edit mode → return to records with snapshot
-                      if (editingDocID) {
-                        setEditingDocID(null);
-                        setActiveTab('records');
-                      }
+                      setEditingDocID(null);
+                      setActiveTab('records');
                     }}
                   />
+
                 ) : activeTab === 'records' ? (
+                  /* ── RECORDS MODULE ── */
                   <RNLegislativeRecords
                     userRole={userRole}
                     initialSnapshot={recordsSnapshot}
                     onEditDocument={(docID, snapshot) => {
-                      setRecordsSnapshot(snapshot);
+                      setRecordsSnapshot(snapshot);  // capture position
                       setEditingDocID(docID);
-                      setActiveTab('create');
+                      setActiveTab('edit');           // separate 'edit' page
                     }}
                     onCreateDocument={() => {
-                      setRecordsSnapshot(null);  // no snapshot needed for new docs
+                      setRecordsSnapshot(null);       // no snapshot for new docs
                       setEditingDocID(null);
-                      setActiveTab('create');
+                      setActiveTab('create');         // separate 'create' page
                     }}
                   />
+
                 ) : (
                   <RNDashboard />
                 )}
