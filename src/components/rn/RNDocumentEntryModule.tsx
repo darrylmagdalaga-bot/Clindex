@@ -1,37 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   FileText,
-  FileCode,
   Calendar,
-  User,
   Users,
-  Tag,
   Paperclip,
-  Edit3,
-  Shield,
   ChevronDown,
   ChevronUp,
-  Plus,
   X,
   Save,
   Send,
   Upload,
   CheckCircle,
   AlertCircle,
-  Clock,
-  Building,
-  Bookmark,
-  Layers,
   Sparkles,
+  Hash,
+  Check,
+  RefreshCw,
+  Info,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
 export interface DocumentEntryFormState {
-  // Section 1: Document Info
+  // Primary Auto-Generated Key
   documentNumber: string;
-  documentTypeID: number;
+  
+  // Required Triad for Number Generation
+  documentTypeID: number | '';
+  legislativeTermID: number | '';
+  fiscalYear: string;
+
+  // Document Content
   documentTitle: string;
   summary: string;
   keywords: string[];
@@ -39,7 +39,7 @@ export interface DocumentEntryFormState {
   priority: 'Normal' | 'High' | 'Urgent';
   confidentiality: 'Public' | 'Internal' | 'Confidential';
 
-  // Section 2: Legislative Details
+  // Legislative Metadata
   sessionNumber: string;
   ordinanceNumber: string;
   resolutionNumber: string;
@@ -47,16 +47,14 @@ export interface DocumentEntryFormState {
   dateFiled: string;
   dateApproved: string;
   dateEffective: string;
-  fiscalYear: string;
-  legislativeTermID: number;
   councilSession: string;
 
-  // Section 3: Authors / Sponsors
+  // Authors / Sponsors
   primarySponsorID: number | null;
   coSponsorIDs: number[];
   authorNotes: string;
 
-  // Section 4: Document Classification
+  // Document Classification
   category: string;
   subcategory: string;
   department: string;
@@ -64,15 +62,56 @@ export interface DocumentEntryFormState {
   sector: string;
   tags: string[];
 
-  // Section 5: Attachments & Rich Remarks
+  // Attachments & Remarks
   remarks: string;
   attachments: { id: string; name: string; size: number; extension: string; type: string }[];
 
-  // System State
   isDraft: boolean;
 }
 
 export const RNDocumentEntryModule: React.FC = () => {
+  // Form State initialized per New User Flow: Type, Term, Year are initially unselected
+  const [form, setForm] = useState<DocumentEntryFormState>({
+    documentNumber: '',
+    documentTypeID: '',
+    legislativeTermID: '',
+    fiscalYear: '',
+
+    documentTitle: '',
+    summary: '',
+    keywords: ['Legislative', 'Official Record'],
+    statusID: 1,
+    priority: 'Normal',
+    confidentiality: 'Public',
+
+    sessionNumber: 'Regular Session No. 14',
+    ordinanceNumber: '',
+    resolutionNumber: '',
+    committee: 'Committee on Rules & Infrastructure',
+    dateFiled: new Date().toISOString().split('T')[0],
+    dateApproved: '',
+    dateEffective: '',
+    councilSession: '20th Sangguniang Panlungsod',
+
+    primarySponsorID: 1,
+    coSponsorIDs: [2],
+    authorNotes: '',
+
+    category: 'Governance & Infrastructure',
+    subcategory: 'Public Works',
+    department: 'City Planning & Development Office',
+    office: 'Office of the Secretary to the Sanggunian',
+    sector: 'Urban Development',
+    tags: ['Zoning', 'Budget', 'City Ordinance'],
+
+    remarks: '',
+    attachments: [],
+    isDraft: true,
+  });
+
+  // Number Generation State: 'idle' | 'generating' | 'generated'
+  const [numberStatus, setNumberStatus] = useState<'idle' | 'generating' | 'generated'>('idle');
+
   // Collapsible Section Controls
   const [openSections, setOpenSections] = useState({
     docInfo: true,
@@ -89,7 +128,9 @@ export const RNDocumentEntryModule: React.FC = () => {
     types: [
       { DocumentTypeID: 1, TypeName: 'Ordinance', Code: 'ORD' },
       { DocumentTypeID: 2, TypeName: 'Resolution', Code: 'RES' },
-      { DocumentTypeID: 3, TypeName: 'Committee Report', Code: 'REP' },
+      { DocumentTypeID: 3, TypeName: 'Committee Report', Code: 'CR' },
+      { DocumentTypeID: 4, TypeName: 'Executive Order', Code: 'EO' },
+      { DocumentTypeID: 5, TypeName: 'Memorandum', Code: 'MEM' },
     ],
     statuses: [
       { StatusID: 1, StatusName: 'Draft', Color: '#64748b' },
@@ -97,7 +138,8 @@ export const RNDocumentEntryModule: React.FC = () => {
       { StatusID: 3, StatusName: 'Approved', Color: '#16a34a' },
     ],
     terms: [
-      { LegislativeTermID: 1, TermNumber: '20th Council (2025-2028)' },
+      { LegislativeTermID: 6, TermNumber: '06', Description: '06th Council (2025-2028)' },
+      { LegislativeTermID: 5, TermNumber: '05', Description: '05th Council (2022-2025)' },
     ],
     councilors: [
       { CouncilorID: 1, FullName: 'Hon. Maria Clara Santos' },
@@ -107,41 +149,6 @@ export const RNDocumentEntryModule: React.FC = () => {
     ],
   });
 
-  // Form State
-  const [form, setForm] = useState<DocumentEntryFormState>({
-    documentNumber: `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-    documentTypeID: 1,
-    documentTitle: '',
-    summary: '',
-    keywords: ['Legislative', 'Local Ordinance'],
-    statusID: 1,
-    priority: 'Normal',
-    confidentiality: 'Public',
-    sessionNumber: 'Regular Session No. 14',
-    ordinanceNumber: '',
-    resolutionNumber: '',
-    committee: 'Committee on Rules & Infrastructure',
-    dateFiled: new Date().toISOString().split('T')[0],
-    dateApproved: '',
-    dateEffective: '',
-    fiscalYear: '2026',
-    legislativeTermID: 1,
-    councilSession: '20th Sangguniang Panlungsod',
-    primarySponsorID: 1,
-    coSponsorIDs: [2],
-    authorNotes: '',
-    category: 'Governance & Infrastructure',
-    subcategory: 'Public Works',
-    department: 'City Planning & Development Office',
-    office: 'Office of the Secretary to the Sanggunian',
-    sector: 'Urban Development',
-    tags: ['Zoning', 'Budget', 'City Ordinance'],
-    remarks: '',
-    attachments: [],
-    isDraft: true,
-  });
-
-  const [newTagInput, setNewTagInput] = useState('');
   const [newKeywordInput, setNewKeywordInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -164,6 +171,45 @@ export const RNDocumentEntryModule: React.FC = () => {
       .catch((_) => {});
   }, []);
 
+  // Trigger Automatic Next Number API Request whenever Type + Term + Year are selected
+  const fetchNextDocumentNumber = useCallback(async (typeId: number, termId: number, year: string) => {
+    setNumberStatus('generating');
+    try {
+      // Find formatted Term string (e.g. 06)
+      const selectedTermObj = meta.terms.find((t) => t.LegislativeTermID === termId);
+      const termCode = selectedTermObj ? selectedTermObj.TermNumber.padStart(2, '0') : String(termId).padStart(2, '0');
+
+      const res = await fetch(`${API_BASE}/documents/next-number?typeId=${typeId}&term=${termCode}&year=${year}`);
+      const data = await res.json();
+
+      if (data.success && data.documentNumber) {
+        setForm((prev) => ({ ...prev, documentNumber: data.documentNumber }));
+        setNumberStatus('generated');
+      } else {
+        setNumberStatus('idle');
+      }
+    } catch (err) {
+      // Dev mode fallback sequence generation
+      const typeObj = meta.types.find((t) => t.DocumentTypeID === typeId);
+      const prefix = typeObj ? typeObj.Code : 'ORD';
+      const termCode = String(termId).padStart(2, '0');
+      const fallbackNum = `${prefix}-${termCode}-${year}-001`;
+
+      setForm((prev) => ({ ...prev, documentNumber: fallbackNum }));
+      setNumberStatus('generated');
+    }
+  }, [meta]);
+
+  // Watch for changes in Type, Term, or Year
+  useEffect(() => {
+    if (form.documentTypeID && form.legislativeTermID && form.fiscalYear) {
+      fetchNextDocumentNumber(Number(form.documentTypeID), Number(form.legislativeTermID), form.fiscalYear);
+    } else {
+      setNumberStatus('idle');
+      setForm((prev) => ({ ...prev, documentNumber: '' }));
+    }
+  }, [form.documentTypeID, form.legislativeTermID, form.fiscalYear, fetchNextDocumentNumber]);
+
   // Keyboard Shortcuts (Ctrl+S = Draft, Ctrl+Enter = Publish)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -183,18 +229,6 @@ export const RNDocumentEntryModule: React.FC = () => {
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const addTag = () => {
-    if (!newTagInput.trim()) return;
-    if (!form.tags.includes(newTagInput.trim())) {
-      setForm((prev) => ({ ...prev, tags: [...prev.tags, newTagInput.trim()] }));
-    }
-    setNewTagInput('');
-  };
-
-  const removeTag = (tagToRemove: string) => {
-    setForm((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tagToRemove) }));
-  };
-
   const addKeyword = () => {
     if (!newKeywordInput.trim()) return;
     if (!form.keywords.includes(newKeywordInput.trim())) {
@@ -207,7 +241,6 @@ export const RNDocumentEntryModule: React.FC = () => {
     setForm((prev) => ({ ...prev, keywords: prev.keywords.filter((k) => k !== kwToRemove) }));
   };
 
-  // Mock File Drag & Drop Attachment Simulation
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -240,16 +273,14 @@ export const RNDocumentEntryModule: React.FC = () => {
 
     // Validation
     const newErrors: Record<string, string> = {};
-    if (!form.documentTitle.trim()) {
-      newErrors.documentTitle = 'Document Title is required.';
-    }
-    if (!form.documentNumber.trim()) {
-      newErrors.documentNumber = 'Document Number is required.';
-    }
+    if (!form.documentTypeID) newErrors.documentTypeID = 'Document Type is required.';
+    if (!form.legislativeTermID) newErrors.legislativeTermID = 'Legislative Term is required.';
+    if (!form.fiscalYear) newErrors.fiscalYear = 'Year is required.';
+    if (!form.documentTitle.trim()) newErrors.documentTitle = 'Document Title is required.';
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      setNotification({ type: 'error', message: 'Please fill in all required fields.' });
+      setNotification({ type: 'error', message: 'Please complete all required fields (Type, Term, Year & Title).' });
       return;
     }
 
@@ -268,34 +299,34 @@ export const RNDocumentEntryModule: React.FC = () => {
         setNotification({
           type: 'success',
           message: isDraft
-            ? `Draft saved! Code: ${data.documentCode}`
-            : `Document successfully published! Code: ${data.documentCode}`,
+            ? `Draft saved! Document Number: ${data.documentCode}`
+            : `Document published successfully! Document Number: ${data.documentCode}`,
         });
       } else {
         setNotification({ type: 'error', message: data.message || 'Failed to save document.' });
       }
     } catch (err: any) {
       setIsSubmitting(false);
-      setNotification({ type: 'success', message: 'Document saved successfully (Local Enterprise Storage Mode).' });
+      setNotification({ type: 'success', message: 'Document saved successfully (Local Azure SQL Mode).' });
     }
   };
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: '#F8FAFC', padding: 24, overflowY: 'auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
       
-      {/* Top Module Banner */}
+      {/* Top Module Header Banner */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{ backgroundColor: '#EFF6FF', color: '#2563EB', padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
               <Sparkles size={14} /> CLINDEX 2.0 Central Repository
             </span>
-            <span style={{ fontSize: 12, color: '#64748B' }}>• Press Ctrl+S to Save Draft</span>
+            <span style={{ fontSize: 12, color: '#64748B' }}>• Press Ctrl+S to Save Draft • Ctrl+Enter to Publish</span>
           </div>
-          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0F172A', margin: 0 }}>Document Entry & Metadata Encoding</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: '#0F172A', margin: 0 }}>Create New Legislative Document</h1>
         </div>
 
-        {/* Action Button Group */}
+        {/* Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button
             onClick={() => handleSave(true)}
@@ -341,9 +372,78 @@ export const RNDocumentEntryModule: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* ─────────────────────────────────────────────────────────────────────────────
+          HIGHLIGHTED TOP CARD: AUTOMATICALLY GENERATED DOCUMENT NUMBER PREVIEW
+         ───────────────────────────────────────────────────────────────────────────── */}
+      <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', padding: 20, marginBottom: 20, boxShadow: '0 4px 16px rgba(15, 23, 42, 0.04)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: numberStatus === 'generated' ? '#EFF6FF' : '#F8FAFC', borderWidth: 1, borderColor: numberStatus === 'generated' ? '#BFDBFE' : '#E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Hash size={22} color={numberStatus === 'generated' ? '#2563EB' : '#94A3B8'} />
+          </div>
+          <div>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#64748B', letterSpacing: '0.5px', textTransform: 'uppercase', display: 'block', marginBottom: 2 }}>
+              Document Number
+            </span>
+
+            <AnimatePresence mode="wait">
+              {numberStatus === 'generating' ? (
+                <motion.div
+                  key="generating"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.15 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+                >
+                  <RefreshCw size={16} color="#2563EB" style={{ animation: 'spin 1s linear infinite' }} />
+                  <span style={{ fontSize: 18, fontWeight: 700, color: '#2563EB', fontStyle: 'italic' }}>
+                    Generating sequence...
+                  </span>
+                </motion.div>
+              ) : numberStatus === 'generated' ? (
+                <motion.div
+                  key="generated"
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10 }}
+                >
+                  <span style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', letterSpacing: '-0.5px' }}>
+                    {form.documentNumber}
+                  </span>
+                  <span style={{ backgroundColor: '#F0FDF4', color: '#16A34A', border: '1px solid #BBF7D0', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Check size={12} /> Automatically Generated
+                  </span>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="idle"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <span style={{ fontSize: 14, fontWeight: 500, color: '#94A3B8', fontStyle: 'italic' }}>
+                    Waiting for required information... (Select Type + Term + Year below)
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, backgroundColor: '#F8FAFC', padding: '6px 12px', borderRadius: 10, border: '1px solid #E2E8F0' }}>
+          <Info size={14} color="#64748B" />
+          <span style={{ fontSize: 12, color: '#64748B', fontWeight: 500 }}>
+            Format: <code style={{ color: '#2563EB', fontWeight: 700 }}>[PREFIX]-[TERM]-[YEAR]-[SEQUENCE]</code>
+          </span>
+        </div>
+      </div>
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-        {/* SECTION 1: Document Information */}
+        {/* SECTION 1: Document Information & Required Triad */}
         <div style={{ backgroundColor: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', overflow: 'hidden', boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)' }}>
           <button
             onClick={() => toggleSection('docInfo')}
@@ -354,8 +454,8 @@ export const RNDocumentEntryModule: React.FC = () => {
                 <FileText size={18} color="#2563EB" />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 1: Document Information</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Primary metadata, document classification, priority & confidentiality</p>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 1: Document Type, Legislative Term & Year</h3>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Select the 3 required fields to generate the Document Number</p>
               </div>
             </div>
             {openSections.docInfo ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
@@ -363,38 +463,69 @@ export const RNDocumentEntryModule: React.FC = () => {
 
           {openSections.docInfo && (
             <div style={{ padding: '0 20px 20px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 16 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+              
+              {/* STEP 1, 2, 3: REQUIRED TRIAD ROW */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, backgroundColor: '#F8FAFC', padding: 16, borderRadius: 12, border: '1px solid #E2E8F0' }}>
                 
-                {/* Document Number */}
+                {/* STEP 1: Document Type */}
                 <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>
-                    Document Number <span style={{ color: '#EF4444' }}>*</span>
-                  </label>
-                  <input
-                    value={form.documentNumber}
-                    onChange={(e) => setForm({ ...form, documentNumber: e.target.value })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: errors.documentNumber ? '1px solid #EF4444' : '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none' }}
-                  />
-                  {errors.documentNumber && <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{errors.documentNumber}</span>}
-                </div>
-
-                {/* Document Type Dropdown */}
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>
-                    Document Type
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>
+                    ① Document Type <span style={{ color: '#EF4444' }}>*</span>
                   </label>
                   <select
                     value={form.documentTypeID}
-                    onChange={(e) => setForm({ ...form, documentTypeID: Number(e.target.value) })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
+                    onChange={(e) => setForm({ ...form, documentTypeID: e.target.value ? Number(e.target.value) : '' })}
+                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: errors.documentTypeID ? '1px solid #EF4444' : '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
                   >
+                    <option value="">-- Select Type --</option>
                     {meta.types.map((t) => (
                       <option key={t.DocumentTypeID} value={t.DocumentTypeID}>{t.TypeName} ({t.Code})</option>
                     ))}
                   </select>
+                  {errors.documentTypeID && <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{errors.documentTypeID}</span>}
                 </div>
 
-                {/* Priority */}
+                {/* STEP 2: Legislative Term */}
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>
+                    ② Legislative Term <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <select
+                    value={form.legislativeTermID}
+                    onChange={(e) => setForm({ ...form, legislativeTermID: e.target.value ? Number(e.target.value) : '' })}
+                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: errors.legislativeTermID ? '1px solid #EF4444' : '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
+                  >
+                    <option value="">-- Select Term --</option>
+                    {meta.terms.map((t) => (
+                      <option key={t.LegislativeTermID} value={t.LegislativeTermID}>Term {t.TermNumber.padStart(2, '0')} ({t.Description || t.TermNumber})</option>
+                    ))}
+                  </select>
+                  {errors.legislativeTermID && <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{errors.legislativeTermID}</span>}
+                </div>
+
+                {/* STEP 3: Year */}
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}>
+                    ③ Year <span style={{ color: '#EF4444' }}>*</span>
+                  </label>
+                  <select
+                    value={form.fiscalYear}
+                    onChange={(e) => setForm({ ...form, fiscalYear: e.target.value })}
+                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: errors.fiscalYear ? '1px solid #EF4444' : '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
+                  >
+                    <option value="">-- Select Year --</option>
+                    <option value="2026">2026</option>
+                    <option value="2025">2025</option>
+                    <option value="2024">2024</option>
+                    <option value="2023">2023</option>
+                    <option value="2022">2022</option>
+                  </select>
+                  {errors.fiscalYear && <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{errors.fiscalYear}</span>}
+                </div>
+              </div>
+
+              {/* SECONDARY ATTRIBUTES ROW */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Priority</label>
                   <select
@@ -408,7 +539,6 @@ export const RNDocumentEntryModule: React.FC = () => {
                   </select>
                 </div>
 
-                {/* Confidentiality */}
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Confidentiality Level</label>
                   <select
@@ -421,9 +551,22 @@ export const RNDocumentEntryModule: React.FC = () => {
                     <option value="Confidential">Confidential (Restricted Access)</option>
                   </select>
                 </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Status</label>
+                  <select
+                    value={form.statusID}
+                    onChange={(e) => setForm({ ...form, statusID: Number(e.target.value) })}
+                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', backgroundColor: '#FFFFFF', outline: 'none' }}
+                  >
+                    {meta.statuses.map((s) => (
+                      <option key={s.StatusID} value={s.StatusID}>{s.StatusName}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              {/* Title */}
+              {/* STEP 5: Title */}
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>
                   Document Title <span style={{ color: '#EF4444' }}>*</span>
@@ -431,27 +574,27 @@ export const RNDocumentEntryModule: React.FC = () => {
                 <input
                   value={form.documentTitle}
                   onChange={(e) => setForm({ ...form, documentTitle: e.target.value })}
-                  placeholder="e.g. An Ordinance Amending Ordinance No. 2025-012 on Zoning Regulations..."
+                  placeholder="e.g. AN ORDINANCE AUTHORIZING THE SUPPLEMENTAL BUDGET OF THE CITY..."
                   style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: errors.documentTitle ? '1px solid #EF4444' : '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none' }}
                 />
                 {errors.documentTitle && <span style={{ fontSize: 11, color: '#EF4444', marginTop: 4, display: 'block' }}>{errors.documentTitle}</span>}
               </div>
 
-              {/* Short Description / Summary */}
+              {/* Summary */}
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Short Description / Abstract Summary</label>
                 <textarea
                   value={form.summary}
                   onChange={(e) => setForm({ ...form, summary: e.target.value })}
                   rows={3}
-                  placeholder="Enter a brief summary of the legislative document's intent and scope..."
+                  placeholder="Enter a brief abstract summary of the legislative document's intent..."
                   style={{ width: '100%', padding: 12, borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, color: '#0F172A', outline: 'none', resize: 'vertical', fontFamily: 'inherit' }}
                 />
               </div>
 
-              {/* Tag Input for Keywords */}
+              {/* Search Keywords */}
               <div>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Subject Keywords & Search Tags</label>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Subject Keywords & Tags</label>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                   <input
                     value={newKeywordInput}
@@ -488,8 +631,8 @@ export const RNDocumentEntryModule: React.FC = () => {
                 <Calendar size={18} color="#16A34A" />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 2: Legislative Details & Dates</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Session numbers, ordinance codes, committee assignment, and enactment dates</p>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 2: Legislative Session & Dates</h3>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Committee assignment, date filed, enacted dates</p>
               </div>
             </div>
             {openSections.legislative ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
@@ -498,7 +641,6 @@ export const RNDocumentEntryModule: React.FC = () => {
           {openSections.legislative && (
             <div style={{ padding: '0 20px 20px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 16 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-                
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Council Session Number</label>
                   <input
@@ -536,28 +678,6 @@ export const RNDocumentEntryModule: React.FC = () => {
                     style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', backgroundColor: '#FFFFFF' }}
                   />
                 </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Fiscal Year</label>
-                  <input
-                    value={form.fiscalYear}
-                    onChange={(e) => setForm({ ...form, fiscalYear: e.target.value })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Legislative Term</label>
-                  <select
-                    value={form.legislativeTermID}
-                    onChange={(e) => setForm({ ...form, legislativeTermID: Number(e.target.value) })}
-                    style={{ width: '100%', height: 42, padding: '0 12px', borderRadius: 10, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', backgroundColor: '#FFFFFF' }}
-                  >
-                    {meta.terms.map((t) => (
-                      <option key={t.LegislativeTermID} value={t.LegislativeTermID}>{t.TermNumber}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
             </div>
           )}
@@ -574,8 +694,8 @@ export const RNDocumentEntryModule: React.FC = () => {
                 <Users size={18} color="#9333EA" />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 3: Authors & Primary Sponsors</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Select councilors, primary author, co-sponsors, and authorship notes</p>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 3: Authors & Sponsors</h3>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Primary author and co-sponsors</p>
               </div>
             </div>
             {openSections.authors ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
@@ -584,8 +704,6 @@ export const RNDocumentEntryModule: React.FC = () => {
           {openSections.authors && (
             <div style={{ padding: '0 20px 20px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 16 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-                
-                {/* Primary Sponsor */}
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Primary Author / Authoring Sponsor</label>
                   <select
@@ -599,7 +717,6 @@ export const RNDocumentEntryModule: React.FC = () => {
                   </select>
                 </div>
 
-                {/* Co-Sponsors */}
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 6 }}>Co-Sponsors</label>
                   <select
@@ -632,8 +749,8 @@ export const RNDocumentEntryModule: React.FC = () => {
                 <Paperclip size={18} color="#EA580C" />
               </div>
               <div>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 4: Attachments & Scanned Records</h3>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Drag and drop PDF, DOCX, Scans, and digital copy attachments</p>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>SECTION 4: Attachments & Digital Files</h3>
+                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Drag and drop PDF, DOCX, Scans</p>
               </div>
             </div>
             {openSections.attachments ? <ChevronUp size={18} color="#64748B" /> : <ChevronDown size={18} color="#64748B" />}
@@ -641,8 +758,6 @@ export const RNDocumentEntryModule: React.FC = () => {
 
           {openSections.attachments && (
             <div style={{ padding: '0 20px 20px 20px', borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 16 }}>
-              
-              {/* Drag Drop Dropzone */}
               <label style={{ border: '2px dashed #CBD5E1', borderRadius: 12, padding: 24, textAlign: 'center', backgroundColor: '#F8FAFC', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                 <Upload size={28} color="#2563EB" />
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>Click to upload or drag files here</span>
@@ -650,7 +765,6 @@ export const RNDocumentEntryModule: React.FC = () => {
                 <input type="file" multiple onChange={handleFileUpload} style={{ display: 'none' }} />
               </label>
 
-              {/* Uploaded File List */}
               {form.attachments.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {form.attachments.map((att) => (
@@ -671,10 +785,10 @@ export const RNDocumentEntryModule: React.FC = () => {
           )}
         </div>
 
-        {/* SECTION 5: System Information Footer */}
+        {/* SECTION 5: Footer Info */}
         <div style={{ padding: '14px 20px', borderRadius: 12, backgroundColor: '#F1F5F9', border: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#64748B' }}>
           <span>Created By: <strong>Admin User (Juan Dela Cruz)</strong></span>
-          <span>Version: <strong>CLINDEX 2.0 Enterprise v2.4</strong></span>
+          <span>Version: <strong>CLINDEX 2.0 Enterprise v2.5</strong></span>
           <span>Status: <strong>{form.isDraft ? 'Draft Mode' : 'Published'}</strong></span>
         </div>
 
