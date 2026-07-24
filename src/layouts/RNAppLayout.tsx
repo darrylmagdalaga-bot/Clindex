@@ -53,6 +53,8 @@ function deriveRole(roleName: string): PersistedSession['role'] {
   }
 }
 
+import { RNLegislativeRecords } from '@/components/rn/RNLegislativeRecords';
+
 export function RNAppLayout() {
   /* ── auth state ── */
   const [isAuthenticated, setIsAuthenticated]         = useState(false);
@@ -219,6 +221,8 @@ export function RNAppLayout() {
                   <RNDeveloperConsole userRole={userRole} />
                 ) : activeTab === 'create' ? (
                   <RNDocumentEntryModule />
+                ) : activeTab === 'records' ? (
+                  <RNLegislativeRecords userRole={userRole} onEditDocument={(docID) => setActiveTab('create')} />
                 ) : (
                   <RNDashboard />
                 )}

@@ -203,16 +203,6 @@ export async function createDocumentEndpoints(app) {
       const paddedSeq  = String(nextSeq).padStart(3, '0');
       const docNumber  = `${prefix}-${formattedTerm}-${formattedYear}-${paddedSeq}`;
 
-      res.json({
-        success: true,
-        documentNumber: docNumber,
-        prefix,
-        term:     formattedTerm,
-        year:     formattedYear,
-        sequence: nextSeq,
-        paddedSequence: paddedSeq,
-      });
-
     } catch (err) {
       console.warn('[next-number] DB error:', err.message);
       const { typeId = '1', term = '06', year = String(new Date().getFullYear()) } = req.query;
@@ -222,12 +212,268 @@ export async function createDocumentEndpoints(app) {
       res.json({
         success: true,
         documentNumber: `${prefix}-${formTerm}-${year}-001`,
-        prefix,
-        term:     formTerm,
-        year:     String(year),
-        sequence: 1,
-        paddedSequence: '001',
+        prefix, term: formTerm, year: String(year), sequence: 1, paddedSequence: '001',
       });
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════
+     GET /api/documents
+     Server-side Pagination, Search, Multi-filtering & Sorting
+     ══════════════════════════════════════════════════════════ */
+  app.get('/api/documents', async (req, res) => {
+    try {
+      const page      = Math.max(1, parseInt(req.query.page || '1', 10));
+      const limit     = Math.min(100, Math.max(1, parseInt(req.query.limit || '10', 10)));
+      const offset    = (page - 1) * limit;
+
+      const search    = req.query.search ? String(req.query.search).trim() : '';
+      const typeId    = req.query.typeId ? parseInt(req.query.typeId, 10) : null;
+      const termId    = req.query.termId ? parseInt(req.query.termId, 10) : null;
+      const year      = req.query.year   ? parseInt(req.query.year, 10)   : null;
+      const statusId  = req.query.statusId ? parseInt(req.query.statusId, 10) : null;
+      const sponsorId = req.query.sponsorId ? parseInt(req.query.sponsorId, 10) : null;
+
+      const sortByCol = ['DocumentCode', 'DocumentTitle', 'TypeName', 'DatePassed', 'DateEnacted', 'CreatedDate'].includes(req.query.sortBy)
+        ? req.query.sortBy : 'CreatedDate';
+      const sortOrder = String(req.query.sortOrder || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+      const pool = await getDbPool();
+      const request = pool.request();
+
+      // Build dynamic WHERE clause
+      const whereClauses = ['d.IsDeleted = 0'];
+
+      if (search) {
+        request.input('search', mssql.NVarChar, `%${search}%`);
+        whereClauses.push(`(
+          d.DocumentCode LIKE @search OR
+          d.DocumentTitle LIKE @search OR
+          d.Keywords LIKE @search OR
+          d.Remarks LIKE @search OR
+          t.TypeName LIKE @search OR
+          spUser.FullName LIKE @search
+        )`);
+      }
+
+      if (typeId) {
+        request.input('typeId', mssql.Int, typeId);
+        whereClauses.push('d.DocumentTypeID = @typeId');
+      }
+
+      if (termId) {
+        request.input('termId', mssql.Int, termId);
+        whereClauses.push('d.LegislativeTermID = @termId');
+      }
+
+      if (year) {
+        request.input('year', mssql.Int, year);
+        whereClauses.push('d.DocumentYear = @year');
+      }
+
+      if (statusId) {
+        request.input('statusId', mssql.Int, statusId);
+        whereClauses.push('d.StatusID = @statusId');
+      }
+
+      if (sponsorId) {
+        request.input('sponsorId', mssql.Int, sponsorId);
+        whereClauses.push(`EXISTS (
+          SELECT 1 FROM Cloud_DocumentSponsors sp 
+          WHERE sp.DocumentID = d.DocumentID AND sp.CouncilorID = @sponsorId
+        )`);
+      }
+
+      const whereSql = whereClauses.join(' AND ');
+
+      // Total count query
+      const countResult = await request.query(`
+        SELECT COUNT(DISTINCT d.DocumentID) AS TotalCount
+        FROM Cloud_Documents d
+        LEFT JOIN Cloud_DocumentTypes t ON d.DocumentTypeID = t.DocumentTypeID
+        LEFT JOIN Cloud_DocumentSponsors spPrimary ON d.DocumentID = spPrimary.DocumentID AND spPrimary.SponsorType = 'Primary'
+        LEFT JOIN Cloud_Councilors spUser ON spPrimary.CouncilorID = spUser.CouncilorID
+        WHERE ${whereSql}
+      `);
+
+      const totalRecords = countResult.recordset[0]?.TotalCount || 0;
+      const totalPages   = Math.ceil(totalRecords / limit) || 1;
+
+      // Data query with OFFSET FETCH
+      request.input('offset', mssql.Int, offset);
+      request.input('limit',  mssql.Int, limit);
+
+      const sortSqlMap = {
+        DocumentCode:  'd.DocumentCode',
+        DocumentTitle: 'd.DocumentTitle',
+        TypeName:      't.TypeName',
+        DatePassed:    'd.DatePassed',
+        DateEnacted:   'd.DateEnacted',
+        CreatedDate:   'd.CreatedDate',
+      };
+      const orderColumn = sortSqlMap[sortByCol] || 'd.CreatedDate';
+
+      const dataResult = await request.query(`
+        SELECT 
+          d.DocumentID, d.DocumentTypeID, d.DocumentNumber, d.DocumentCode, d.DocumentYear,
+          d.LegislativeTermID, d.DocumentTitle, d.Summary, d.DatePassed, d.DateEnacted,
+          d.StatusID, d.Keywords, d.Remarks, d.CreatedBy, d.CreatedDate, d.ModifiedDate,
+          t.TypeName, t.Code AS TypeCode,
+          st.StatusName, st.Color AS StatusColor,
+          lt.TermNumber, lt.Description AS TermDescription,
+          spUser.CouncilorID AS PrimarySponsorID,
+          spUser.FullName AS PrimarySponsorName
+        FROM Cloud_Documents d
+        LEFT JOIN Cloud_DocumentTypes t ON d.DocumentTypeID = t.DocumentTypeID
+        LEFT JOIN Cloud_DocumentStatus st ON d.StatusID = st.StatusID
+        LEFT JOIN Cloud_LegislativeTerms lt ON d.LegislativeTermID = lt.LegislativeTermID
+        LEFT JOIN Cloud_DocumentSponsors spPrimary ON d.DocumentID = spPrimary.DocumentID AND spPrimary.SponsorType = 'Primary'
+        LEFT JOIN Cloud_Councilors spUser ON spPrimary.CouncilorID = spUser.CouncilorID
+        WHERE ${whereSql}
+        ORDER BY ${orderColumn} ${sortOrder}
+        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+      `);
+
+      res.json({
+        success: true,
+        data: dataResult.recordset,
+        pagination: {
+          page,
+          limit,
+          totalRecords,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1,
+        },
+      });
+
+    } catch (err) {
+      console.error('[GET /api/documents]', err.message);
+      res.status(500).json({ success: false, message: 'Failed to retrieve legislative records.' });
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════
+     GET /api/documents/:id
+     Single document full detail with sponsors & attachments
+     ══════════════════════════════════════════════════════════ */
+  app.get('/api/documents/:id', async (req, res) => {
+    try {
+      const docID = parseInt(req.params.id, 10);
+      if (isNaN(docID)) return res.status(400).json({ success: false, message: 'Invalid document ID.' });
+
+      const pool = await getDbPool();
+      const request = pool.request();
+      request.input('DocumentID', mssql.Int, docID);
+
+      const [docRes, sponsorsRes, attRes] = await Promise.all([
+        request.query(`
+          SELECT d.*, t.TypeName, t.Code AS TypeCode, st.StatusName, st.Color AS StatusColor,
+                 lt.TermNumber, lt.Description AS TermDescription
+          FROM Cloud_Documents d
+          LEFT JOIN Cloud_DocumentTypes t ON d.DocumentTypeID = t.DocumentTypeID
+          LEFT JOIN Cloud_DocumentStatus st ON d.StatusID = st.StatusID
+          LEFT JOIN Cloud_LegislativeTerms lt ON d.LegislativeTermID = lt.LegislativeTermID
+          WHERE d.DocumentID = @DocumentID AND d.IsDeleted = 0
+        `),
+        request.query(`
+          SELECT s.DocumentSponsorID, s.CouncilorID, s.SponsorType, c.FullName, c.Title, c.PositionID
+          FROM Cloud_DocumentSponsors s
+          JOIN Cloud_Councilors c ON s.CouncilorID = c.CouncilorID
+          WHERE s.DocumentID = @DocumentID
+        `),
+        request.query(`
+          SELECT AttachmentID, OriginalFileName, StoredFileName, FilePath, FileExtension, FileSize, MimeType, UploadedDate
+          FROM Cloud_DocumentAttachments
+          WHERE DocumentID = @DocumentID
+        `),
+      ]);
+
+      const document = docRes.recordset[0];
+      if (!document) {
+        return res.status(404).json({ success: false, message: 'Document not found.' });
+      }
+
+      // Log VIEW_DOCUMENT audit
+      try {
+        const auditReq = pool.request();
+        auditReq.input('Action', mssql.NVarChar(100), 'VIEW_DOCUMENT');
+        auditReq.input('TableName', mssql.NVarChar(100), 'Cloud_Documents');
+        auditReq.input('RecordID', mssql.NVarChar(50), String(docID));
+        auditReq.input('IPAddress', mssql.NVarChar(45), req.ip || '127.0.0.1');
+        auditReq.input('Browser', mssql.NVarChar(255), req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 255) : 'Unknown');
+        await auditReq.query(`
+          INSERT INTO Cloud_AuditLogs (Action, TableName, RecordID, IPAddress, Browser, CreatedDate)
+          VALUES (@Action, @TableName, @RecordID, @IPAddress, @Browser, GETDATE())
+        `);
+      } catch (_) {}
+
+      res.json({
+        success: true,
+        data: {
+          ...document,
+          sponsors: sponsorsRes.recordset,
+          attachments: attRes.recordset,
+        },
+      });
+
+    } catch (err) {
+      console.error('[GET /api/documents/:id]', err.message);
+      res.status(500).json({ success: false, message: 'Failed to load document details.' });
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════
+     DELETE /api/documents/:id
+     Soft Delete Handler (IsDeleted = 1)
+     ══════════════════════════════════════════════════════════ */
+  app.delete('/api/documents/:id', async (req, res) => {
+    try {
+      const docID = parseInt(req.params.id, 10);
+      if (isNaN(docID)) return res.status(400).json({ success: false, message: 'Invalid document ID.' });
+
+      const pool = await getDbPool();
+
+      // Check document exists
+      const checkReq = pool.request();
+      checkReq.input('DocumentID', mssql.Int, docID);
+      const check = await checkReq.query('SELECT DocumentID, DocumentCode FROM Cloud_Documents WHERE DocumentID = @DocumentID AND IsDeleted = 0');
+
+      if (check.recordset.length === 0) {
+        return res.status(404).json({ success: false, message: 'Document not found or already deleted.' });
+      }
+
+      const docCode = check.recordset[0].DocumentCode;
+
+      // Execute soft delete
+      const delReq = pool.request();
+      delReq.input('DocumentID', mssql.Int, docID);
+      await delReq.query('UPDATE Cloud_Documents SET IsDeleted = 1, ModifiedDate = GETDATE() WHERE DocumentID = @DocumentID');
+
+      // Audit Log
+      try {
+        const auditReq = pool.request();
+        auditReq.input('Action', mssql.NVarChar(100), 'DELETE_DOCUMENT');
+        auditReq.input('TableName', mssql.NVarChar(100), 'Cloud_Documents');
+        auditReq.input('RecordID', mssql.NVarChar(50), String(docID));
+        auditReq.input('NewValue', mssql.NVarChar(mssql.MAX), JSON.stringify({ DocumentCode: docCode, Action: 'SOFT_DELETE' }));
+        auditReq.input('IPAddress', mssql.NVarChar(45), req.ip || '127.0.0.1');
+        auditReq.input('Browser', mssql.NVarChar(255), req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 255) : 'Unknown');
+        await auditReq.query(`
+          INSERT INTO Cloud_AuditLogs (Action, TableName, RecordID, NewValue, IPAddress, Browser, CreatedDate)
+          VALUES (@Action, @TableName, @RecordID, @NewValue, @IPAddress, @Browser, GETDATE())
+        `);
+      } catch (_) {}
+
+      res.json({
+        success: true,
+        message: `Document ${docCode} successfully deleted.`,
+        documentID: docID,
+      });
+
+    } catch (err) {
+      console.error('[DELETE /api/documents/:id]', err.message);
+      res.status(500).json({ success: false, message: 'Failed to delete document.' });
     }
   });
 

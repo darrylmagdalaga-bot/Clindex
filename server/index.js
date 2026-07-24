@@ -238,27 +238,8 @@ app.post('/api/auth/logout', (req, res) => {
 
 import { createDocumentEndpoints } from './documentEndpoints.js';
 
-// Register Document Entry & Reference Metadata Endpoints
+// Register Document Entry, Legislative Records & Metadata Endpoints
 createDocumentEndpoints(app);
-
-// Documents API Endpoint
-app.get('/api/documents', async (req, res) => {
-  try {
-    const pool = await getDbPool();
-    const result = await pool.request().query(`
-      SELECT TOP 50 d.DocumentID, d.DocumentCode, d.DocumentTitle, d.DatePassed, d.DocumentYear,
-                     t.TypeName, s.StatusName, s.Color AS StatusColor
-      FROM Cloud_Documents d
-      LEFT JOIN Cloud_DocumentTypes t ON d.DocumentTypeID = t.DocumentTypeID
-      LEFT JOIN Cloud_DocumentStatus s ON d.StatusID = s.StatusID
-      WHERE d.IsDeleted = 0
-      ORDER BY d.CreatedDate DESC
-    `);
-    res.json({ success: true, count: result.recordset.length, data: result.recordset });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Database Query Failed', message: err.message });
-  }
-});
 
 // -------------------------------------------------------------------------------
 // ERROR HANDLING MIDDLEWARE
