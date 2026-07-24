@@ -8,9 +8,10 @@ import { loginUser, AuthUser } from '@/services/authApi';
 
 interface RNLoginScreenProps {
   onLoginSuccess?: (user: AuthUser) => void;
+  sessionExpiredMessage?: string | null;
 }
 
-export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) => {
+export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess, sessionExpiredMessage }) => {
   const { width } = useWindowDimensions();
   const isMobile = width < 768;
 
@@ -163,6 +164,14 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
             <Text style={styles.welcomeHeading}>Welcome Back</Text>
             <Text style={styles.welcomeSubheading}>Sign in to continue</Text>
 
+            {/* Session Expired Banner */}
+            {sessionExpiredMessage ? (
+              <View style={[styles.errorBanner, { backgroundColor: '#fef3c7', borderColor: '#fcd34d' }]}>
+                <AlertCircle size={16} color="#d97706" style={{ marginRight: 8 }} />
+                <Text style={[styles.errorBannerText, { color: '#92400e' }]}>{sessionExpiredMessage}</Text>
+              </View>
+            ) : null}
+
             {/* Error Banner */}
             {errorMessage ? (
               <View style={styles.errorBanner}>
@@ -170,6 +179,7 @@ export const RNLoginScreen: React.FC<RNLoginScreenProps> = ({ onLoginSuccess }) 
                 <Text style={styles.errorBannerText}>{errorMessage}</Text>
               </View>
             ) : null}
+
 
             <View style={styles.formGroup}>
               {/* Username Searchable Dropdown */}

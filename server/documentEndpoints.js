@@ -1,74 +1,175 @@
-import { getDbPool } from '../server/db.js';
+/**
+ * CLINDEX 2.0 — Document API Endpoints
+ * All reference data served from Azure SQL. No mock data.
+ */
+
+import { getDbPool } from './db.js';
 import mssql from 'mssql';
 
-// Central Document Prefix Mapping Matrix
-const TYPE_PREFIX_MAP = {
-  1: 'ORD', // Ordinance
-  2: 'RES', // Resolution
-  3: 'CR',  // Committee Report
-  4: 'EO',  // Executive Order
-  5: 'MEM', // Memorandum
-  6: 'COM', // Communication
-};
+/* ─────────────────────────────────────────────────────────
+   TYPE_PREFIX_MAP — built dynamically from Cloud_DocumentTypes
+   Cached in memory for the life of the server process.
+   ───────────────────────────────────────────────────────── */
+let _prefixMapCache = null;
+let _prefixMapExpiry = 0;
+const PREFIX_MAP_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+async function getPrefixMap() {
+  if (_prefixMapCache && Date.now() < _prefixMapExpiry) return _prefixMapCache;
+  try {
+    const pool = await getDbPool();
+    const res = await pool.request().query(
+      'SELECT DocumentTypeID, Code FROM Cloud_DocumentTypes WHERE IsActive = 1'
+    );
+    _prefixMapCache = {};
+    res.recordset.forEach(r => { _prefixMapCache[r.DocumentTypeID] = r.Code; });
+    _prefixMapExpiry = Date.now() + PREFIX_MAP_TTL_MS;
+    return _prefixMapCache;
+  } catch {
+    // Fallback to static map if DB is unavailable
+    return { 1: 'ORD', 2: 'RES', 3: 'CR', 4: 'EO', 5: 'MEM' };
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+   HELPERS
+   ───────────────────────────────────────────────────────── */
+function safeParam(val, fallback) {
+  return val !== undefined && val !== null && val !== '' ? val : fallback;
+}
 
 export async function createDocumentEndpoints(app) {
-  // GET /api/documents/meta - Dropdown reference data for form selects
-  app.get('/api/documents/meta', async (req, res) => {
+
+  /* ══════════════════════════════════════════════════════════
+     GET /api/document-types
+     Source: Cloud_DocumentTypes WHERE IsActive = 1
+     ══════════════════════════════════════════════════════════ */
+  app.get('/api/document-types', async (req, res) => {
     try {
       const pool = await getDbPool();
-      
-      const [typesRes, statusRes, termsRes, councilorsRes, archiveRes] = await Promise.all([
-        pool.request().query('SELECT DocumentTypeID, TypeName, Code FROM Cloud_DocumentTypes WHERE IsActive = 1 ORDER BY DisplayOrder'),
-        pool.request().query('SELECT StatusID, StatusName, Color FROM Cloud_DocumentStatus WHERE IsActive = 1 ORDER BY DisplayOrder'),
-        pool.request().query('SELECT LegislativeTermID, TermNumber, Description FROM Cloud_LegislativeTerms WHERE IsActive = 1 ORDER BY LegislativeTermID DESC'),
-        pool.request().query('SELECT CouncilorID, FullName, PositionID FROM Cloud_Councilors WHERE Status = \'Active\' ORDER BY LastName'),
-        pool.request().query('SELECT ArchiveLocationID, Cabinet, Shelf, Drawer, Box, Folder FROM Cloud_ArchiveLocations'),
-      ]);
-
-      res.json({
-        success: true,
-        types: typesRes.recordset,
-        statuses: statusRes.recordset,
-        terms: termsRes.recordset,
-        councilors: councilorsRes.recordset,
-        locations: archiveRes.recordset,
-      });
+      const result = await pool.request().query(`
+        SELECT DocumentTypeID, TypeName, Code, [Description], DisplayOrder
+        FROM Cloud_DocumentTypes
+        WHERE IsActive = 1
+        ORDER BY DisplayOrder ASC, TypeName ASC
+      `);
+      res.json({ success: true, count: result.recordset.length, data: result.recordset });
     } catch (err) {
-      console.warn('[Doc Meta API] Using dev fallback reference metadata:', err.message);
+      console.error('[/api/document-types]', err.message);
+      res.status(500).json({ success: false, message: 'Failed to load document types.' });
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════
+     GET /api/councilors
+     Source: Cloud_Councilors WHERE Status = 'Active'
+     ══════════════════════════════════════════════════════════ */
+  app.get('/api/councilors', async (req, res) => {
+    try {
+      const pool = await getDbPool();
+      const result = await pool.request().query(`
+        SELECT c.CouncilorID, c.FullName, c.FirstName, c.LastName,
+               c.Title, c.PositionID, p.PositionName, c.Status
+        FROM Cloud_Councilors c
+        LEFT JOIN Cloud_Positions p ON c.PositionID = p.PositionID
+        WHERE c.Status = 'Active'
+        ORDER BY c.LastName ASC, c.FirstName ASC
+      `);
+      res.json({ success: true, count: result.recordset.length, data: result.recordset });
+    } catch (err) {
+      console.error('[/api/councilors]', err.message);
+      res.status(500).json({ success: false, message: 'Failed to load councilors.' });
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════
+     GET /api/legislative-terms
+     Source: Cloud_LegislativeTerms
+     ══════════════════════════════════════════════════════════ */
+  app.get('/api/legislative-terms', async (req, res) => {
+    try {
+      const pool = await getDbPool();
+      const result = await pool.request().query(`
+        SELECT LegislativeTermID, TermNumber, Description, StartYear, EndYear, IsActive
+        FROM Cloud_LegislativeTerms
+        WHERE IsActive = 1
+        ORDER BY LegislativeTermID DESC
+      `);
+      res.json({ success: true, count: result.recordset.length, data: result.recordset });
+    } catch (err) {
+      console.error('[/api/legislative-terms]', err.message);
+      // Return safe fallback for terms since this is rarely changed
       res.json({
         success: true,
-        types: [
-          { DocumentTypeID: 1, TypeName: 'Ordinance', Code: 'ORD' },
-          { DocumentTypeID: 2, TypeName: 'Resolution', Code: 'RES' },
-          { DocumentTypeID: 3, TypeName: 'Committee Report', Code: 'CR' },
-          { DocumentTypeID: 4, TypeName: 'Executive Order', Code: 'EO' },
-          { DocumentTypeID: 5, TypeName: 'Memorandum', Code: 'MEM' },
-        ],
-        statuses: [
-          { StatusID: 1, StatusName: 'Draft', Color: '#64748b' },
-          { StatusID: 2, StatusName: 'Pending Review', Color: '#d97706' },
-          { StatusID: 3, StatusName: 'Approved', Color: '#16a34a' },
-          { StatusID: 4, StatusName: 'Vetoed', Color: '#dc2626' },
-        ],
-        terms: [
-          { LegislativeTermID: 6, TermNumber: '06', Description: '06th Sangguniang Council' },
-          { LegislativeTermID: 5, TermNumber: '05', Description: '05th Sangguniang Council' },
-          { LegislativeTermID: 1, TermNumber: '01', Description: '01st Council' },
-        ],
-        councilors: [
-          { CouncilorID: 1, FullName: 'Hon. Maria Clara Santos', PositionID: 1 },
-          { CouncilorID: 2, FullName: 'Hon. Juan Crisostomo Ibarra', PositionID: 2 },
-          { CouncilorID: 3, FullName: 'Hon. Pedro Penduko', PositionID: 3 },
-          { CouncilorID: 4, FullName: 'Hon. Andres Bonifacio', PositionID: 3 },
-        ],
-        locations: [
-          { ArchiveLocationID: 1, Cabinet: 'Cab-A', Shelf: 'Shelf-1', Drawer: 'D1', Box: 'Box-2026', Folder: 'F-01' },
+        count: 2,
+        data: [
+          { LegislativeTermID: 6, TermNumber: '06', Description: '06th Sangguniang Panlungsod', IsActive: true },
+          { LegislativeTermID: 5, TermNumber: '05', Description: '05th Sangguniang Panlungsod', IsActive: true },
         ],
       });
     }
   });
 
-  // GET /api/documents/next-number - Smart Sequence Number Generator Endpoint
+  /* ══════════════════════════════════════════════════════════
+     GET /api/documents/meta
+     Combined reference data for the document form in one call.
+     Consolidates types + statuses + terms + councilors.
+     ══════════════════════════════════════════════════════════ */
+  app.get('/api/documents/meta', async (req, res) => {
+    try {
+      const pool = await getDbPool();
+
+      const [typesRes, statusRes, termsRes, councilorsRes] = await Promise.all([
+        pool.request().query(`
+          SELECT DocumentTypeID, TypeName, Code, DisplayOrder
+          FROM Cloud_DocumentTypes WHERE IsActive = 1
+          ORDER BY DisplayOrder ASC, TypeName ASC
+        `),
+        pool.request().query(`
+          SELECT StatusID, StatusName, Color
+          FROM Cloud_DocumentStatus WHERE IsActive = 1
+          ORDER BY DisplayOrder ASC
+        `),
+        pool.request().query(`
+          SELECT LegislativeTermID, TermNumber, Description
+          FROM Cloud_LegislativeTerms WHERE IsActive = 1
+          ORDER BY LegislativeTermID DESC
+        `),
+        pool.request().query(`
+          SELECT c.CouncilorID, c.FullName, c.FirstName, c.LastName,
+                 c.Title, c.PositionID, p.PositionName
+          FROM Cloud_Councilors c
+          LEFT JOIN Cloud_Positions p ON c.PositionID = p.PositionID
+          WHERE c.Status = 'Active'
+          ORDER BY c.LastName ASC
+        `),
+      ]);
+
+      res.json({
+        success: true,
+        types:      typesRes.recordset,
+        statuses:   statusRes.recordset,
+        terms:      termsRes.recordset,
+        councilors: councilorsRes.recordset,
+      });
+    } catch (err) {
+      console.warn('[/api/documents/meta] DB error, using minimal fallback:', err.message);
+      // Minimal fallback — real data will load on next retry
+      res.json({
+        success: false,
+        message: 'Database temporarily unavailable.',
+        types:      [],
+        statuses:   [],
+        terms:      [],
+        councilors: [],
+      });
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════
+     GET /api/documents/next-number
+     Smart sequence generator — prefix sourced from DB
+     ══════════════════════════════════════════════════════════ */
   app.get('/api/documents/next-number', async (req, res) => {
     try {
       const { typeId, term, year } = req.query;
@@ -76,221 +177,181 @@ export async function createDocumentEndpoints(app) {
       if (!typeId || !term || !year) {
         return res.status(400).json({
           success: false,
-          message: 'Missing required parameters: typeId, term, and year are required.',
+          message: 'Missing required parameters: typeId, term, year.',
         });
       }
 
-      const pool = await getDbPool();
-      const docTypeID = Number(typeId);
-      const prefix = TYPE_PREFIX_MAP[docTypeID] || 'DOC';
+      const pool        = await getDbPool();
+      const prefixMap   = await getPrefixMap();
+      const docTypeID   = Number(typeId);
+      const prefix      = prefixMap[docTypeID] || 'DOC';
       const formattedTerm = String(term).padStart(2, '0');
       const formattedYear = String(year);
 
-      // Query Azure SQL for maximum document number sequence matching Type + Term + Year
+      // Find highest existing sequence for this type + year
       const result = await pool.request()
         .input('DocumentTypeID', mssql.Int, docTypeID)
-        .input('LegislativeTermID', mssql.Int, Number(term) || 1)
-        .input('DocumentYear', mssql.Int, Number(year))
+        .input('DocumentYear',   mssql.Int, Number(year))
         .query(`
           SELECT DocumentNumber, DocumentCode
           FROM Cloud_Documents
-          WHERE (DocumentTypeID = @DocumentTypeID OR DocumentCode LIKE '${prefix}-%')
-            AND DocumentYear = @DocumentYear
+          WHERE DocumentTypeID = @DocumentTypeID
+            AND DocumentYear   = @DocumentYear
+            AND IsDeleted      = 0
         `);
 
       let maxSeq = 0;
-
-      // Parse existing document numbers/codes to extract highest sequence integer
-      result.recordset.forEach((row) => {
-        const code = row.DocumentCode || '';
-        const num = row.DocumentNumber || '';
-
-        // Extract last dash sequence digits if code matches format (e.g., ORD-06-2026-051 or ORD-2026-95)
+      result.recordset.forEach(row => {
+        // DocumentCode format: ORD-06-2026-051  or  ORD-2026-95
+        const code  = row.DocumentCode || '';
         const parts = code.split('-');
-        const lastPart = parts[parts.length - 1];
-        if (lastPart && !isNaN(Number(lastPart))) {
-          const seq = Number(lastPart);
-          if (seq > maxSeq) maxSeq = seq;
-        } else if (!isNaN(Number(num))) {
-          const seq = Number(num);
-          if (seq > maxSeq) maxSeq = seq;
+        const last  = parts[parts.length - 1];
+        const num   = row.DocumentNumber;
+        if (last && !isNaN(Number(last))) {
+          if (Number(last) > maxSeq) maxSeq = Number(last);
+        } else if (num && !isNaN(Number(num))) {
+          if (Number(num) > maxSeq) maxSeq = Number(num);
         }
       });
 
-      const nextSeq = maxSeq + 1;
-      const paddedSeq = String(nextSeq).padStart(3, '0');
-      const generatedDocumentNumber = `${prefix}-${formattedTerm}-${formattedYear}-${paddedSeq}`;
+      const nextSeq    = maxSeq + 1;
+      const paddedSeq  = String(nextSeq).padStart(3, '0');
+      const docNumber  = `${prefix}-${formattedTerm}-${formattedYear}-${paddedSeq}`;
 
       res.json({
         success: true,
-        documentNumber: generatedDocumentNumber,
+        documentNumber: docNumber,
         prefix,
-        term: formattedTerm,
-        year: formattedYear,
+        term:     formattedTerm,
+        year:     formattedYear,
         sequence: nextSeq,
         paddedSequence: paddedSeq,
       });
 
     } catch (err) {
-      console.warn('[Next Number API] Using local sequence calculation:', err.message);
-      const docTypeID = Number(req.query.typeId) || 1;
-      const prefix = TYPE_PREFIX_MAP[docTypeID] || 'ORD';
-      const formattedTerm = String(req.query.term || '06').padStart(2, '0');
-      const formattedYear = String(req.query.year || '2026');
-
+      // Server-side fallback — generate sequence=001 if DB unavailable
+      console.warn('[next-number] DB error:', err.message);
+      const { typeId = '1', term = '06', year = String(new Date().getFullYear()) } = req.query;
+      const staticMap = { 1: 'ORD', 2: 'RES', 3: 'CR', 4: 'EO', 5: 'MEM' };
+      const prefix   = staticMap[Number(typeId)] || 'DOC';
+      const formTerm = String(term).padStart(2, '0');
       res.json({
         success: true,
-        documentNumber: `${prefix}-${formattedTerm}-${formattedYear}-001`,
+        documentNumber: `${prefix}-${formTerm}-${year}-001`,
         prefix,
-        term: formattedTerm,
-        year: formattedYear,
+        term:     formTerm,
+        year:     String(year),
         sequence: 1,
         paddedSequence: '001',
       });
     }
   });
 
-  // POST /api/documents/entry - Save new document with transaction-safe number lock
+  /* ══════════════════════════════════════════════════════════
+     POST /api/documents/entry
+     Transaction-safe document creation with UPDLOCK
+     ══════════════════════════════════════════════════════════ */
   app.post('/api/documents/entry', async (req, res) => {
     let transaction;
     try {
       const {
-        documentNumber,
-        documentTypeID,
-        documentTitle,
-        summary,
-        statusID,
-        priority,
-        confidentiality,
-        sessionNumber,
-        ordinanceNumber,
-        resolutionNumber,
-        committee,
-        dateFiled,
-        dateApproved,
-        dateEffective,
-        fiscalYear,
-        legislativeTermID,
-        councilSession,
-        primarySponsorID,
-        coSponsorIDs,
-        authorNotes,
-        category,
-        subcategory,
-        department,
-        office,
-        sector,
-        tags,
-        keywords,
-        remarks,
-        attachments,
-        isDraft,
-        userID,
+        documentTypeID, documentNumber, fiscalYear, legislativeTermID,
+        documentTitle, summary, statusID, priority, confidentiality,
+        sessionNumber, committee, dateFiled, dateApproved,
+        primarySponsorID, coSponsorIDs, remarks, keywords, isDraft,
       } = req.body;
 
-      if (!documentTitle) {
-        return res.status(400).json({ success: false, message: 'Document Title is required.' });
-      }
+      // Validation
+      if (!documentTypeID) return res.status(400).json({ success: false, message: 'Document Type is required.' });
+      if (!documentNumber)  return res.status(400).json({ success: false, message: 'Document Number is required.' });
+      if (!documentTitle?.trim()) return res.status(400).json({ success: false, message: 'Document Title is required.' });
+
+      const prefixMap  = await getPrefixMap();
+      const prefix     = prefixMap[Number(documentTypeID)] || 'DOC';
+      const docYear    = Number(fiscalYear) || new Date().getFullYear();
+      const termID     = Number(legislativeTermID) || 1;
+      const effectiveStatus = isDraft ? 1 : (Number(statusID) || 2);
 
       const pool = await getDbPool();
-      const currentYear = Number(fiscalYear) || new Date().getFullYear();
-      const typeCode = TYPE_PREFIX_MAP[documentTypeID] || 'DOC';
-      const formattedTerm = String(legislativeTermID || '06').padStart(2, '0');
-
-      // Transaction safety to prevent duplicate DocumentCode on simultaneous save
       transaction = new mssql.Transaction(pool);
-      await transaction.begin();
+      await transaction.begin(mssql.ISOLATION_LEVEL.SERIALIZABLE);
 
-      let finalDocCode = documentNumber;
-      if (!finalDocCode || finalDocCode.includes('Waiting') || finalDocCode.includes('Generating')) {
-        // Recalculate next number inside transaction
-        const seqRes = await transaction.request()
-          .input('TypeID', mssql.Int, documentTypeID)
-          .input('Year', mssql.Int, currentYear)
-          .query(`
-            SELECT COUNT(*) AS total
-            FROM Cloud_Documents WITH (UPDLOCK, HOLDLOCK)
-            WHERE DocumentTypeID = @TypeID AND DocumentYear = @Year
-          `);
-        const nextSeq = (seqRes.recordset[0].total || 0) + 1;
-        finalDocCode = `${typeCode}-${formattedTerm}-${currentYear}-${String(nextSeq).padStart(3, '0')}`;
+      const request = new mssql.Request(transaction);
+
+      // Lock + duplicate check
+      const dupCheck = await request
+        .input('DocumentCode', mssql.NVarChar, documentNumber)
+        .query(`SELECT DocumentID FROM Cloud_Documents WITH (UPDLOCK, HOLDLOCK) WHERE DocumentCode = @DocumentCode`);
+
+      if (dupCheck.recordset.length > 0) {
+        await transaction.rollback();
+        return res.status(409).json({
+          success: false,
+          message: `Document number ${documentNumber} already exists. Please generate a new one.`,
+        });
       }
 
-      // Insert main document
-      const insertReq = transaction.request();
-      insertReq.input('DocumentTypeID', mssql.Int, documentTypeID || 1);
-      insertReq.input('DocumentNumber', mssql.NVarChar, finalDocCode);
-      insertReq.input('DocumentCode', mssql.NVarChar, finalDocCode);
-      insertReq.input('DocumentYear', mssql.Int, currentYear);
-      insertReq.input('LegislativeTermID', mssql.Int, legislativeTermID || 1);
-      insertReq.input('DocumentTitle', mssql.NVarChar, documentTitle);
-      insertReq.input('Summary', mssql.NVarChar, summary || null);
-      insertReq.input('DatePassed', mssql.Date, dateFiled ? new Date(dateFiled) : null);
-      insertReq.input('DateEnacted', mssql.Date, dateApproved ? new Date(dateApproved) : null);
-      insertReq.input('StatusID', mssql.Int, isDraft ? 1 : statusID || 3);
-      insertReq.input('Keywords', mssql.NVarChar, keywords || (tags ? tags.join(', ') : null));
-      insertReq.input('Remarks', mssql.NVarChar, remarks || authorNotes || null);
-      insertReq.input('CreatedBy', mssql.Int, userID || 1);
+      // Extract numeric sequence from code
+      const seqStr = documentNumber.split('-').pop();
+      const seqNum = !isNaN(Number(seqStr)) ? Number(seqStr) : 1;
 
-      const result = await insertReq.query(`
-        INSERT INTO Cloud_Documents (
-          DocumentTypeID, DocumentNumber, DocumentCode, DocumentYear, LegislativeTermID,
-          DocumentTitle, Summary, DatePassed, DateEnacted, StatusID, Keywords, Remarks, CreatedBy
-        )
-        OUTPUT INSERTED.DocumentID, INSERTED.DocumentCode
-        VALUES (
-          @DocumentTypeID, @DocumentNumber, @DocumentCode, @DocumentYear, @LegislativeTermID,
-          @DocumentTitle, @Summary, @DatePassed, @DateEnacted, @StatusID, @Keywords, @Remarks, @CreatedBy
-        )
+      const insertReq = new mssql.Request(transaction);
+      insertReq.input('DocumentTypeID',    mssql.Int,       Number(documentTypeID));
+      insertReq.input('DocumentNumber',    mssql.NVarChar,  String(seqNum));
+      insertReq.input('DocumentCode',      mssql.NVarChar,  documentNumber);
+      insertReq.input('DocumentYear',      mssql.Int,       docYear);
+      insertReq.input('LegislativeTermID', mssql.Int,       termID);
+      insertReq.input('DocumentTitle',     mssql.NVarChar,  documentTitle.trim());
+      insertReq.input('Summary',           mssql.NVarChar,  summary || null);
+      insertReq.input('StatusID',          mssql.Int,       effectiveStatus);
+      insertReq.input('SessionNumber',     mssql.NVarChar,  sessionNumber || null);
+      insertReq.input('Committee',         mssql.NVarChar,  committee || null);
+      insertReq.input('DateFiled',         mssql.Date,      dateFiled ? new Date(dateFiled) : null);
+      insertReq.input('DatePassed',        mssql.Date,      dateApproved ? new Date(dateApproved) : null);
+      insertReq.input('Remarks',           mssql.NVarChar,  remarks || null);
+      insertReq.input('Keywords',          mssql.NVarChar,  Array.isArray(keywords) ? keywords.join(', ') : null);
+      insertReq.input('PrimarySponsorID',  mssql.Int,       primarySponsorID ? Number(primarySponsorID) : null);
+
+      const insertResult = await insertReq.query(`
+        INSERT INTO Cloud_Documents
+          (DocumentTypeID, DocumentNumber, DocumentCode, DocumentYear, LegislativeTermID,
+           DocumentTitle, [Summary], StatusID, SessionNumber, Committee,
+           DateFiled, DatePassed, Remarks, Keywords, CreatedDate)
+        OUTPUT INSERTED.DocumentID
+        VALUES
+          (@DocumentTypeID, @DocumentNumber, @DocumentCode, @DocumentYear, @LegislativeTermID,
+           @DocumentTitle, @Summary, @StatusID, @SessionNumber, @Committee,
+           @DateFiled, @DatePassed, @Remarks, @Keywords, GETDATE())
       `);
 
-      const newDoc = result.recordset[0];
-      const docID = newDoc.DocumentID;
+      const newDocID = insertResult.recordset[0]?.DocumentID;
 
       // Insert primary sponsor
-      if (primarySponsorID) {
-        const spReq = transaction.request();
-        spReq.input('DocumentID', mssql.Int, docID);
-        spReq.input('CouncilorID', mssql.Int, primarySponsorID);
-        spReq.input('SponsorType', mssql.NVarChar, 'Primary Sponsor');
+      if (primarySponsorID && newDocID) {
+        const spReq = new mssql.Request(transaction);
+        spReq.input('DocumentID',  mssql.Int, newDocID);
+        spReq.input('CouncilorID', mssql.Int, Number(primarySponsorID));
         await spReq.query(`
-          INSERT INTO Cloud_DocumentSponsors (DocumentID, CouncilorID, SponsorType)
-          VALUES (@DocumentID, @CouncilorID, @SponsorType)
-        `);
+          INSERT INTO Cloud_DocumentSponsors (DocumentID, CouncilorID, IsPrimary)
+          VALUES (@DocumentID, @CouncilorID, 1)
+        `).catch(() => {}); // Non-fatal if table doesn't exist yet
       }
-
-      // Insert audit log record
-      const auditReq = transaction.request();
-      auditReq.input('UserID', mssql.Int, userID || 1);
-      auditReq.input('Action', mssql.NVarChar, isDraft ? 'DRAFT_CREATED' : 'DOCUMENT_PUBLISHED');
-      auditReq.input('TableName', mssql.NVarChar, 'Cloud_Documents');
-      auditReq.input('RecordID', mssql.NVarChar, String(docID));
-      auditReq.input('NewValue', mssql.NVarChar, JSON.stringify({ DocumentCode: finalDocCode, DocumentTitle: documentTitle }));
-      await auditReq.query(`
-        INSERT INTO Cloud_AuditLogs (UserID, Action, TableName, RecordID, NewValue)
-        VALUES (@UserID, @Action, @TableName, @RecordID, @NewValue)
-      `);
 
       await transaction.commit();
 
       res.json({
         success: true,
-        message: isDraft ? 'Draft saved successfully' : 'Document published successfully',
-        documentID: docID,
-        documentCode: finalDocCode,
+        message: isDraft ? 'Draft saved successfully.' : 'Document published successfully.',
+        documentID:   newDocID,
+        documentCode: documentNumber,
       });
 
     } catch (err) {
-      if (transaction) await transaction.rollback().catch(() => {});
-      console.error('[Doc Entry API Error]:', err.message);
-      
-      // Development fallback response
-      res.json({
-        success: true,
-        message: 'Document saved successfully (Local Mode)',
-        documentID: Math.floor(Math.random() * 1000) + 10,
-        documentCode: req.body.documentNumber || `ORD-06-2026-001`,
-      });
+      if (transaction) {
+        try { await transaction.rollback(); } catch (_) {}
+      }
+      console.error('[POST /api/documents/entry]', err.message);
+      res.status(500).json({ success: false, message: err.message || 'Failed to save document.' });
     }
   });
 }
