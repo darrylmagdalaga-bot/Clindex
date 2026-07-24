@@ -195,7 +195,8 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
     const typeObj = docTypes.find(t => t.DocumentTypeID === typeId);
     const prefix  = typeObj?.Code ?? 'DOC';
     const termObj = legTerms.find(t => t.LegislativeTermID === termId);
-    const term    = termObj ? termObj.TermNumber.padStart(2, '0') : String(termId).padStart(2, '0');
+    const termDigits = termObj ? (termObj.TermNumber.match(/\d+/) || ['01'])[0] : String(termId);
+    const term    = String(termDigits).padStart(2, '0');
     return `${prefix}-${term}-${year}-001`;
   }, [docTypes, legTerms]);
 
@@ -204,8 +205,9 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
     setNumStatus('generating');
     patch({ documentNumber: '' });
 
-    const termObj  = legTerms.find(t => t.LegislativeTermID === termId);
-    const termCode = termObj ? termObj.TermNumber.padStart(2, '0') : String(termId).padStart(2, '0');
+    const termObj    = legTerms.find(t => t.LegislativeTermID === termId);
+    const termDigits = termObj ? (termObj.TermNumber.match(/\d+/) || ['01'])[0] : String(termId);
+    const termCode   = String(termDigits).padStart(2, '0');
 
     try {
       const data = await apiFetch<{ success: boolean; documentNumber?: string }>(
@@ -434,11 +436,14 @@ export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
               {loadingMeta ? <SelectSkeleton /> : (
                 <select value={form.legislativeTermID} onChange={e => patch({ legislativeTermID: e.target.value ? Number(e.target.value) : '' })} style={selectBase(!!errors.legislativeTermID)}>
                   <option value="">Select Term</option>
-                  {legTerms.map(t => (
-                    <option key={t.LegislativeTermID} value={t.LegislativeTermID}>
-                      {t.TermNumber.padStart(2, '0')} — {t.Description ?? `Term ${t.TermNumber}`}
-                    </option>
-                  ))}
+                  {legTerms.map(t => {
+                    const num = (t.TermNumber.match(/\d+/) || ['01'])[0].padStart(2, '0');
+                    return (
+                      <option key={t.LegislativeTermID} value={t.LegislativeTermID}>
+                        Term {num} ({t.TermNumber})
+                      </option>
+                    );
+                  })}
                 </select>
               )}
               <FieldError msg={errors.legislativeTermID} />

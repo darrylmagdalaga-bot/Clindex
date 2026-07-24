@@ -172,7 +172,11 @@ export async function createDocumentEndpoints(app) {
       const prefixMap     = await getPrefixMap();
       const docTypeID     = Number(typeId);
       const prefix        = prefixMap[docTypeID] || 'DOC';
-      const formattedTerm = String(term).padStart(2, '0');
+      
+      // Extract numeric digits from term parameter (e.g. '50th Council' -> '50', '6th Council' -> '06', '6' -> '06')
+      const digitsMatch   = String(term).match(/\d+/);
+      const rawTermNum    = digitsMatch ? digitsMatch[0] : '01';
+      const formattedTerm = String(rawTermNum).padStart(2, '0');
       const formattedYear = String(year);
 
       const result = await pool.request()
