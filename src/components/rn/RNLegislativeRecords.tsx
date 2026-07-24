@@ -47,11 +47,13 @@ interface PaginationMeta {
 interface RNLegislativeRecordsProps {
   userRole?: 'Developer' | 'Administrator' | 'Encoder' | 'Viewer';
   onEditDocument?: (docID: number) => void;
+  onCreateDocument?: () => void;
 }
 
 export const RNLegislativeRecords: React.FC<RNLegislativeRecordsProps> = ({
   userRole = 'Developer',
   onEditDocument,
+  onCreateDocument,
 }) => {
   /* ── Filter & Search State ── */
   const [searchQuery, setSearchQuery] = useState('');
@@ -229,6 +231,12 @@ export const RNLegislativeRecords: React.FC<RNLegislativeRecordsProps> = ({
           <button type="button" onClick={fetchRecords} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 9, border: '1px solid #CBD5E1', backgroundColor: '#FFFFFF', fontSize: 12.5, fontWeight: 600, color: '#334155', cursor: 'pointer' }}>
             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} /> Refresh
           </button>
+
+          {canEdit && (
+            <button type="button" onClick={onCreateDocument} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#2563EB,#1D4ED8)', color: '#FFFFFF', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 3px 10px rgba(37,99,235,0.25)' }}>
+              + New Legislative Document
+            </button>
+          )}
         </div>
       </div>
 
@@ -359,9 +367,14 @@ export const RNLegislativeRecords: React.FC<RNLegislativeRecordsProps> = ({
               ) : records.length === 0 ? (
                 <tr>
                   <td colSpan={8} style={{ padding: 48, textAlign: 'center', color: '#94A3B8' }}>
-                    <FileText size={32} style={{ margin: '0 auto 10px', display: 'block', opacity: 0.4 }} />
-                    <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#475569' }}>No legislative records found</p>
-                    <p style={{ margin: '4px 0 0', fontSize: 12 }}>Try adjusting your search criteria or filters.</p>
+                    <FileText size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.3, color: '#2563EB' }} />
+                    <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>No legislative records found</p>
+                    <p style={{ margin: '4px 0 16px', fontSize: 12.5, color: '#64748B' }}>Try adjusting your search query, clear filters, or create a new document.</p>
+                    {canEdit && (
+                      <button type="button" onClick={onCreateDocument} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, border: 'none', backgroundColor: '#2563EB', color: '#FFFFFF', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                        + Create New Document
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (

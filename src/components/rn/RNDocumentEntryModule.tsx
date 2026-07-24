@@ -138,12 +138,21 @@ const CollapsibleSection: React.FC<{
   </div>
 );
 
+interface RNDocumentEntryModuleProps {
+  editDocumentID?: number | null;
+  onSaveSuccess?: () => void;
+}
+
 /* ══════════════════════════════════════════════
    MAIN MODULE
    ══════════════════════════════════════════════ */
-export const RNDocumentEntryModule: React.FC = () => {
+export const RNDocumentEntryModule: React.FC<RNDocumentEntryModuleProps> = ({
+  editDocumentID,
+  onSaveSuccess,
+}) => {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const patch = (p: Partial<FormState>) => setForm(prev => ({ ...prev, ...p }));
+  const isEditMode = Boolean(editDocumentID);
 
   /* ── Reference data from Azure SQL ── */
   const [docTypes,    setDocTypes]    = useState<DocType[]>([]);
@@ -214,8 +223,58 @@ export const RNDocumentEntryModule: React.FC = () => {
     }
   }, [legTerms, buildLocalNumber]);
 
+  /* ── Fetch existing document in Edit Mode ── */
+  useEffect(() => {
+    if (!editDocumentID) return;
+    let isMounted = true;
+    (async () => {
+      try {
+        const data = await apiFetch<{ success: boolean; data: any }>(`${API_BASE}/documents/${editDocumentID}`);
+        if (data.success && data.data && isMounted) {
+          const d = data.data;
+          const primSp = d.sponsors?.find((s: any) => s.SponsorType === 'Primary');
+          const coSps = d.sponsors?.filter((s: any) => s.SponsorType === 'Co-Sponsor').map((s: any) => s.CouncilorID) || [];
+          const kwList = d.Keywords ? d.Keywords.split(',').map((k: string) => k.trim()).filter(Boolean) : [];
+          const atts = d.attachments?.map((a: any) => ({
+            id: String(a.AttachmentID),
+            name: a.OriginalFileName,
+            size: Number(a.FileSize),
+            extension: a.FileExtension,
+          })) || [];
+
+          setForm({
+            documentNumber: d.DocumentCode || d.DocumentNumber,
+            documentTypeID: d.DocumentTypeID || '',
+            legislativeTermID: d.LegislativeTermID || '',
+            fiscalYear: String(d.DocumentYear || new Date().getFullYear()),
+            documentTitle: d.DocumentTitle || '',
+            summary: d.Summary || '',
+            keywords: kwList,
+            statusID: d.StatusID || 1,
+            priority: 'Normal',
+            confidentiality: 'Public',
+            sessionNumber: '',
+            committee: '',
+            dateFiled: d.DatePassed ? d.DatePassed.split('T')[0] : '',
+            dateApproved: d.DateEnacted ? d.DateEnacted.split('T')[0] : '',
+            primarySponsorID: primSp ? primSp.CouncilorID : null,
+            coSponsorIDs: coSps,
+            remarks: d.Remarks || '',
+            attachments: atts,
+            isDraft: d.StatusID === 1,
+          });
+          setNumStatus('generated');
+        }
+      } catch (err) {
+        console.error('[RNDocumentEntryModule] Edit load error:', err);
+      }
+    })();
+    return () => { isMounted = false; };
+  }, [editDocumentID]);
+
   /* ── Debounced trigger when triad changes ── */
   useEffect(() => {
+    if (isEditMode) return; // Do not auto-regenerate number in edit mode
     if (numDebounce.current) clearTimeout(numDebounce.current);
     if (form.documentTypeID && form.legislativeTermID && form.fiscalYear) {
       numDebounce.current = setTimeout(() => {
@@ -230,7 +289,7 @@ export const RNDocumentEntryModule: React.FC = () => {
       patch({ documentNumber: '' });
     }
     return () => { if (numDebounce.current) clearTimeout(numDebounce.current); };
-  }, [form.documentTypeID, form.legislativeTermID, form.fiscalYear, fetchNextNumber]);
+  }, [form.documentTypeID, form.legislativeTermID, form.fiscalYear, fetchNextNumber, isEditMode]);
 
   /* ── Keyboard shortcuts ── */
   useEffect(() => {
@@ -275,16 +334,25 @@ export const RNDocumentEntryModule: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      const res  = await fetch(`${API_BASE}/documents/entry`, {
-        method: 'POST',
+      const url = isEditMode ? `${API_BASE}/documents/${editDocumentID}` : `${API_BASE}/documents/entry`;
+      const method = isEditMode ? 'PUT' : 'POST';
+
+      const res  = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, isDraft }),
       });
       const data = await res.json();
       setIsSubmitting(false);
       if (data.success) {
-        setNotification({ type: 'success', msg: isDraft ? `Draft saved — ${data.documentCode}` : `Document published — ${data.documentCode}` });
-        if (!isDraft) setForm(INITIAL_FORM); // Clear form after publish
+        setNotification({
+          type: 'success',
+          msg: isEditMode
+            ? `Document ${data.documentCode} updated successfully.`
+            : (isDraft ? `Draft saved — ${data.documentCode}` : `Document published — ${data.documentCode}`)
+        });
+        if (onSaveSuccess) onSaveSuccess();
+        if (!isEditMode && !isDraft) setForm(INITIAL_FORM);
       } else {
         setNotification({ type: 'error', msg: data.message || 'Failed to save document.' });
       }

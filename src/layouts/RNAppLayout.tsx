@@ -65,6 +65,7 @@ export function RNAppLayout() {
   /* ── UI state ── */
   const [activeTab, setActiveTab]                     = useState('dashboard');
   const [isCollapsed, setIsCollapsed]                 = useState(false);
+  const [editingDocID, setEditingDocID]               = useState<number | null>(null);
 
   /* ── bootstrap: restore session on mount (prevents login flash) ── */
   const [sessionChecked, setSessionChecked]           = useState(false);
@@ -220,9 +221,22 @@ export function RNAppLayout() {
                 {activeTab === 'developer' ? (
                   <RNDeveloperConsole userRole={userRole} />
                 ) : activeTab === 'create' ? (
-                  <RNDocumentEntryModule />
+                  <RNDocumentEntryModule
+                    editDocumentID={editingDocID}
+                    onSaveSuccess={() => { setEditingDocID(null); }}
+                  />
                 ) : activeTab === 'records' ? (
-                  <RNLegislativeRecords userRole={userRole} onEditDocument={(docID) => setActiveTab('create')} />
+                  <RNLegislativeRecords
+                    userRole={userRole}
+                    onEditDocument={(docID) => {
+                      setEditingDocID(docID);
+                      setActiveTab('create');
+                    }}
+                    onCreateDocument={() => {
+                      setEditingDocID(null);
+                      setActiveTab('create');
+                    }}
+                  />
                 ) : (
                   <RNDashboard />
                 )}

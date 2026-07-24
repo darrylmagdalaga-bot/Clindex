@@ -202,7 +202,15 @@ export async function createDocumentEndpoints(app) {
       const nextSeq    = maxSeq + 1;
       const paddedSeq  = String(nextSeq).padStart(3, '0');
       const docNumber  = `${prefix}-${formattedTerm}-${formattedYear}-${paddedSeq}`;
-
+      res.json({
+        success: true,
+        documentNumber: docNumber,
+        prefix,
+        term:     formattedTerm,
+        year:     formattedYear,
+        sequence: nextSeq,
+        paddedSequence: paddedSeq,
+      });
     } catch (err) {
       console.warn('[next-number] DB error:', err.message);
       const { typeId = '1', term = '06', year = String(new Date().getFullYear()) } = req.query;
@@ -474,6 +482,180 @@ export async function createDocumentEndpoints(app) {
     } catch (err) {
       console.error('[DELETE /api/documents/:id]', err.message);
       res.status(500).json({ success: false, message: 'Failed to delete document.' });
+    }
+  });
+
+  /* ══════════════════════════════════════════════════════════
+     PUT /api/documents/:id
+     Update existing legislative document in transaction scope
+     ══════════════════════════════════════════════════════════ */
+  app.put('/api/documents/:id', async (req, res) => {
+    let transaction;
+    try {
+      const docID = parseInt(req.params.id, 10);
+      if (isNaN(docID)) return res.status(400).json({ success: false, message: 'Invalid document ID.' });
+
+      const {
+        documentTypeID, fiscalYear, legislativeTermID,
+        documentTitle, summary, statusID, sessionNumber, committee,
+        dateFiled, dateApproved, primarySponsorID, coSponsorIDs,
+        remarks, keywords, attachments, isDraft, userID = 1,
+      } = req.body;
+
+      if (!documentTitle?.trim()) return res.status(400).json({ success: false, message: 'Document Title is required.' });
+
+      const pool = await getDbPool();
+
+      // Check record exists
+      const checkReq = pool.request();
+      checkReq.input('DocumentID', mssql.Int, docID);
+      const existing = await checkReq.query('SELECT DocumentID, DocumentCode FROM Cloud_Documents WHERE DocumentID = @DocumentID AND IsDeleted = 0');
+      if (existing.recordset.length === 0) {
+        return res.status(404).json({ success: false, message: 'Document not found.' });
+      }
+
+      const docCode = existing.recordset[0].DocumentCode;
+      const effectiveStatus = isDraft ? 1 : (Number(statusID) || 2);
+
+      transaction = new mssql.Transaction(pool);
+      await transaction.begin(mssql.ISOLATION_LEVEL.SERIALIZABLE);
+
+      // Append Session Number and Committee Assignment to Remarks if provided
+      let fullRemarks = remarks ? remarks.trim() : '';
+      if (sessionNumber) fullRemarks = `[Session: ${sessionNumber}] ${fullRemarks}`.trim();
+      if (committee)     fullRemarks = `[Committee: ${committee}] ${fullRemarks}`.trim();
+
+      // Resolve valid UserID for FK check
+      let validUserID = null;
+      if (userID) {
+        const uCheck = await pool.request()
+          .input('uID', mssql.Int, Number(userID))
+          .query('SELECT UserID FROM Cloud_Users WHERE UserID = @uID');
+        if (uCheck.recordset.length > 0) validUserID = Number(userID);
+      }
+
+      // Update Cloud_Documents record
+      const updateReq = new mssql.Request(transaction);
+      updateReq.input('DocumentID',        mssql.Int,           docID);
+      updateReq.input('DocumentTypeID',    mssql.Int,           Number(documentTypeID) || 1);
+      updateReq.input('DocumentYear',      mssql.Int,           Number(fiscalYear) || new Date().getFullYear());
+      updateReq.input('LegislativeTermID', mssql.Int,           Number(legislativeTermID) || 1);
+      updateReq.input('DocumentTitle',     mssql.NVarChar(mssql.MAX), documentTitle.trim());
+      updateReq.input('Summary',           mssql.NVarChar(mssql.MAX), summary ? summary.trim() : null);
+      updateReq.input('StatusID',          mssql.Int,           effectiveStatus);
+      updateReq.input('Keywords',          mssql.NVarChar(500), Array.isArray(keywords) ? keywords.join(', ') : null);
+      updateReq.input('Remarks',           mssql.NVarChar(mssql.MAX), fullRemarks || null);
+      updateReq.input('DatePassed',        mssql.Date,          dateFiled ? new Date(dateFiled) : null);
+      updateReq.input('DateEnacted',       mssql.Date,          dateApproved ? new Date(dateApproved) : null);
+      updateReq.input('ModifiedBy',        mssql.Int,           validUserID);
+
+      await updateReq.query(`
+        UPDATE Cloud_Documents
+        SET DocumentTypeID    = @DocumentTypeID,
+            DocumentYear      = @DocumentYear,
+            LegislativeTermID = @LegislativeTermID,
+            DocumentTitle     = @DocumentTitle,
+            [Summary]         = @Summary,
+            StatusID          = @StatusID,
+            Keywords          = @Keywords,
+            Remarks           = @Remarks,
+            DatePassed        = @DatePassed,
+            DateEnacted       = @DateEnacted,
+            ModifiedBy        = @ModifiedBy,
+            ModifiedDate      = GETDATE()
+        WHERE DocumentID = @DocumentID
+      `);
+
+      // Refresh Sponsors: Delete existing & re-insert
+      const delSpReq = new mssql.Request(transaction);
+      delSpReq.input('DocumentID', mssql.Int, docID);
+      await delSpReq.query('DELETE FROM Cloud_DocumentSponsors WHERE DocumentID = @DocumentID');
+
+      if (primarySponsorID) {
+        const primSpReq = new mssql.Request(transaction);
+        primSpReq.input('DocumentID',  mssql.Int,          docID);
+        primSpReq.input('CouncilorID', mssql.Int,          Number(primarySponsorID));
+        primSpReq.input('SponsorType', mssql.NVarChar(50), 'Primary');
+        await primSpReq.query('INSERT INTO Cloud_DocumentSponsors (DocumentID, CouncilorID, SponsorType) VALUES (@DocumentID, @CouncilorID, @SponsorType)');
+      }
+
+      if (Array.isArray(coSponsorIDs) && coSponsorIDs.length > 0) {
+        for (const coSpID of coSponsorIDs) {
+          if (!coSpID || Number(coSpID) === Number(primarySponsorID)) continue;
+          const coSpReq = new mssql.Request(transaction);
+          coSpReq.input('DocumentID',  mssql.Int,          docID);
+          coSpReq.input('CouncilorID', mssql.Int,          Number(coSpID));
+          coSpReq.input('SponsorType', mssql.NVarChar(50), 'Co-Sponsor');
+          await coSpReq.query('INSERT INTO Cloud_DocumentSponsors (DocumentID, CouncilorID, SponsorType) VALUES (@DocumentID, @CouncilorID, @SponsorType)');
+        }
+      }
+
+      // Refresh Attachments if provided
+      if (Array.isArray(attachments) && attachments.length > 0) {
+        const delAttReq = new mssql.Request(transaction);
+        delAttReq.input('DocumentID', mssql.Int, docID);
+        await delAttReq.query('DELETE FROM Cloud_DocumentAttachments WHERE DocumentID = @DocumentID');
+
+        for (const att of attachments) {
+          const origName   = att.name || 'document_attachment';
+          const ext        = att.extension || origName.split('.').pop() || 'file';
+          const storedName = `${docID}_${att.id || Date.now()}.${ext}`;
+          const filePath   = `/uploads/documents/${fiscalYear || 2026}/${storedName}`;
+
+          const attReq = new mssql.Request(transaction);
+          attReq.input('DocumentID',       mssql.Int,           docID);
+          attReq.input('OriginalFileName', mssql.NVarChar(255), origName);
+          attReq.input('StoredFileName',   mssql.NVarChar(255), storedName);
+          attReq.input('FilePath',         mssql.NVarChar(500), filePath);
+          attReq.input('FileExtension',    mssql.NVarChar(20),  ext);
+          attReq.input('FileSize',         mssql.BigInt,        Number(att.size) || 0);
+          attReq.input('MimeType',         mssql.NVarChar(100), `application/${ext}`);
+          attReq.input('UploadedBy',       mssql.Int,           validUserID);
+
+          await attReq.query(`
+            INSERT INTO Cloud_DocumentAttachments
+              (DocumentID, OriginalFileName, StoredFileName, FilePath, FileExtension, FileSize, MimeType, UploadedBy, UploadedDate)
+            VALUES
+              (@DocumentID, @OriginalFileName, @StoredFileName, @FilePath, @FileExtension, @FileSize, @MimeType, @UploadedBy, GETDATE())
+          `);
+        }
+      }
+
+      // Record UPDATE_DOCUMENT Audit Log
+      const auditReq = new mssql.Request(transaction);
+      auditReq.input('UserID',    mssql.Int,           validUserID);
+      auditReq.input('Action',    mssql.NVarChar(100), 'UPDATE_DOCUMENT');
+      auditReq.input('TableName', mssql.NVarChar(100), 'Cloud_Documents');
+      auditReq.input('RecordID',  mssql.NVarChar(50),  String(docID));
+      auditReq.input('NewValue',  mssql.NVarChar(mssql.MAX), JSON.stringify({
+        DocumentCode: docCode,
+        DocumentTitle: documentTitle,
+        StatusID: effectiveStatus,
+        PrimarySponsorID: primarySponsorID,
+      }));
+      auditReq.input('IPAddress', mssql.NVarChar(45),  req.ip || '127.0.0.1');
+      auditReq.input('Browser',   mssql.NVarChar(255), req.headers['user-agent'] ? req.headers['user-agent'].substring(0, 255) : 'Unknown');
+
+      await auditReq.query(`
+        INSERT INTO Cloud_AuditLogs (UserID, Action, TableName, RecordID, NewValue, IPAddress, Browser, CreatedDate)
+        VALUES (@UserID, @Action, @TableName, @RecordID, @NewValue, @IPAddress, @Browser, GETDATE())
+      `);
+
+      await transaction.commit();
+
+      res.json({
+        success: true,
+        message: `Document ${docCode} updated successfully.`,
+        documentID: docID,
+        documentCode: docCode,
+      });
+
+    } catch (err) {
+      if (transaction) {
+        try { await transaction.rollback(); } catch (_) {}
+      }
+      console.error('[PUT /api/documents/:id]', err.message);
+      res.status(500).json({ success: false, message: err.message || 'Failed to update document.' });
     }
   });
 
