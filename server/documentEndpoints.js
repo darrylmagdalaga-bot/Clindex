@@ -209,15 +209,19 @@ export async function createDocumentEndpoints(app) {
       const formattedTerm = String(rawTermNum).padStart(2, '0');
       const formattedYear = String(year);
 
+      // Query database scoped strictly by DocumentTypeID, LegislativeTerm/TermNumber, and DocumentYear
       const result = await pool.request()
         .input('DocumentTypeID', mssql.Int, docTypeID)
         .input('DocumentYear',   mssql.Int, Number(year))
+        .input('TermPattern',    mssql.NVarChar(50), `%${formattedTerm}%`)
         .query(`
-          SELECT DocumentNumber, DocumentCode
-          FROM Cloud_Documents
-          WHERE DocumentTypeID = @DocumentTypeID
-            AND DocumentYear   = @DocumentYear
-            AND IsDeleted      = 0
+          SELECT d.DocumentNumber, d.DocumentCode
+          FROM Cloud_Documents d
+          LEFT JOIN Cloud_LegislativeTerms lt ON d.LegislativeTermID = lt.LegislativeTermID
+          WHERE d.DocumentTypeID = @DocumentTypeID
+            AND d.DocumentYear   = @DocumentYear
+            AND (lt.TermNumber LIKE @TermPattern OR d.DocumentCode LIKE '%-' + @TermPattern + '-%')
+            AND d.IsDeleted      = 0
         `);
 
       let maxSeq = 0;
@@ -777,7 +781,7 @@ export async function createDocumentEndpoints(app) {
 
       const insertReq = new mssql.Request(transaction);
       insertReq.input('DocumentTypeID',    mssql.Int,           docTypeID);
-      insertReq.input('DocumentNumber',    mssql.NVarChar(50),   seqNum);
+      insertReq.input('DocumentNumber',    mssql.NVarChar(50),   documentNumber);
       insertReq.input('DocumentCode',      mssql.NVarChar(50),   documentNumber);
       insertReq.input('DocumentYear',      mssql.Int,           docYear);
       insertReq.input('LegislativeTermID', mssql.Int,           termID);
